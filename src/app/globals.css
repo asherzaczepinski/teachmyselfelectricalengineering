@@ -1,8 +1,43 @@
 @import "tailwindcss";
 
-@theme {
+/*
+  Token system. One dark theme: the board shows glowing, burning, moving
+  circuits, so the chrome around it stays dark and quiet (light emission
+  needs a dark canvas — same reason oscilloscopes are dark).
+  z-scale: board content < board HUD (10) < drawer (20) < banner/toast (30).
+*/
+:root {
+  --bg: oklch(0.17 0.02 255);
+  --board: oklch(0.15 0.022 258);
+  --board-grid: oklch(0.21 0.02 258);
+  --panel: oklch(0.21 0.02 252);
+  --panel-2: oklch(0.25 0.022 252);
+  --line: oklch(0.32 0.02 252);
+  --line-strong: oklch(0.42 0.02 252);
+  --ink: oklch(0.93 0.008 252);
+  --ink-2: oklch(0.76 0.015 252);
+  --ink-3: oklch(0.62 0.02 252);
+  --accent: oklch(0.82 0.15 80);
+  --accent-dim: oklch(0.42 0.08 80);
+  --accent-ink: oklch(0.24 0.06 80);
+  --danger: oklch(0.66 0.19 25);
+  --danger-dim: oklch(0.32 0.09 25);
+  --focus: oklch(0.75 0.13 230);
+
   --font-body: var(--font-inter), system-ui, sans-serif;
   --font-mono: var(--font-plex-mono), ui-monospace, monospace;
+}
+
+@theme inline {
+  --color-bg: var(--bg);
+  --color-panel: var(--panel);
+  --color-panel-2: var(--panel-2);
+  --color-line: var(--line);
+  --color-ink: var(--ink);
+  --color-ink-2: var(--ink-2);
+  --color-ink-3: var(--ink-3);
+  --color-accent: var(--accent);
+  --color-danger: var(--danger);
 }
 
 html,
@@ -11,14 +46,122 @@ body {
 }
 
 body {
-  background: #0b1220;
-  color: #e2e8f0;
+  background: var(--bg);
+  color: var(--ink);
   font-family: var(--font-body);
   -webkit-font-smoothing: antialiased;
   overscroll-behavior: none;
 }
 
-/* sliders in the part settings panel */
+button {
+  font: inherit;
+}
+
+/* ——— chrome components ——— */
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 5px 10px;
+  border-radius: 7px;
+  border: 1px solid var(--line);
+  color: var(--ink-2);
+  background: transparent;
+  cursor: pointer;
+  transition: background 160ms ease-out, color 160ms ease-out, border-color 160ms ease-out;
+}
+.btn:hover {
+  background: var(--panel-2);
+  color: var(--ink);
+}
+.btn:active {
+  background: var(--line);
+}
+.btn[disabled] {
+  opacity: 0.45;
+  cursor: default;
+}
+.btn-primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: var(--accent-ink);
+  font-weight: 600;
+}
+.btn-primary:hover {
+  background: oklch(0.87 0.15 80);
+  color: var(--accent-ink);
+}
+.btn-danger {
+  border-color: var(--danger-dim);
+  color: var(--danger);
+}
+.btn-danger:hover {
+  background: var(--danger-dim);
+  color: var(--ink);
+}
+
+/* segmented control */
+.seg {
+  display: inline-flex;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  overflow: hidden;
+}
+.seg > button {
+  font-size: 12px;
+  padding: 5px 10px;
+  color: var(--ink-3);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: background 160ms ease-out, color 160ms ease-out;
+}
+.seg > button + button {
+  border-left: 1px solid var(--line);
+}
+.seg > button:hover {
+  color: var(--ink);
+}
+.seg > button[aria-pressed="true"] {
+  background: var(--panel-2);
+  color: var(--ink);
+  font-weight: 600;
+}
+.seg > button.seg-accent[aria-pressed="true"] {
+  background: var(--accent-dim);
+  color: var(--ink);
+}
+
+:is(.btn, .seg > button, .tool-item, input, select):focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 1px;
+}
+
+/* toolbox items */
+.tool-item {
+  width: 100%;
+  text-align: left;
+  border-radius: 9px;
+  border: 1px solid transparent;
+  padding: 6px 8px;
+  cursor: grab;
+  background: transparent;
+  transition: background 160ms ease-out, border-color 160ms ease-out;
+  touch-action: none;
+}
+.tool-item:hover {
+  background: var(--panel-2);
+  border-color: var(--line);
+}
+.tool-item:active {
+  cursor: grabbing;
+  background: var(--line);
+}
+
+/* sliders */
 input[type="range"].sim-slider {
   -webkit-appearance: none;
   appearance: none;
@@ -30,7 +173,7 @@ input[type="range"].sim-slider {
 input[type="range"].sim-slider::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 2px;
-  background: #334155;
+  background: var(--line);
 }
 input[type="range"].sim-slider::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -39,32 +182,37 @@ input[type="range"].sim-slider::-webkit-slider-thumb {
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  background: #0e1628;
-  border: 2.5px solid #38bdf8;
+  background: var(--panel);
+  border: 2.5px solid var(--accent);
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
 }
 input[type="range"].sim-slider::-moz-range-track {
   height: 4px;
   border-radius: 2px;
-  background: #334155;
+  background: var(--line);
 }
 input[type="range"].sim-slider::-moz-range-thumb {
   width: 13px;
   height: 13px;
   border-radius: 50%;
-  background: #0e1628;
-  border: 2.5px solid #38bdf8;
+  background: var(--panel);
+  border: 2.5px solid var(--accent);
 }
 
-.btn-soft {
-  display: inline-block;
+select.sim-select,
+input.sim-input {
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--ink);
   font-size: 12px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  border: 1px solid #334155;
-  color: #cbd5e1;
-  transition: background 120ms ease;
+  padding: 5px 8px;
 }
-.btn-soft:hover {
-  background: #1e293b;
+
+@media (prefers-reduced-motion: reduce) {
+  .btn,
+  .seg > button,
+  .tool-item {
+    transition: none;
+  }
 }

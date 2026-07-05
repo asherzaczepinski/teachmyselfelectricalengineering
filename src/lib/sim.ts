@@ -1,6 +1,7 @@
 // Circuit engine: every part is a two-ended element between two vertices.
 // Each frame we rebuild a conductance matrix (nodal analysis), solve it,
-// and use the answer to drive current flow, brightness, heat, sound and spin.
+// and use the answer to drive current, light, heat, sound, motion — and
+// consequences (blown fuses, exploded parts).
 
 export type PartType =
   | "wire"
@@ -8,9 +9,12 @@ export type PartType =
   | "resistor"
   | "bulb"
   | "switch"
+  | "button"
+  | "blinker"
   | "fuse"
   | "capacitor"
   | "led"
+  | "diode"
   | "speaker"
   | "motor"
   | "heater"
@@ -21,18 +25,23 @@ export type PartType =
   | "eraser"
   | "hand";
 
+export type LedColor = "red" | "amber" | "green" | "blue" | "white" | "purple";
+export type MotorAttachment = "fan" | "wheel" | "propeller" | "winch";
+export type SpeakerMode = "note" | "volts";
+
 export interface PartDef {
   label: string;
   hint: string; // plain-words description shown in the toolbox
   len: number; // distance between the two end dots, in pixels
   rigid: boolean; // rigid parts keep their length; wires stretch
-  category: "Build" | "Measure" | "Real things";
+  category: "Build" | "Inputs & sound" | "Measure" | "Real things";
   resistance: number; // ohms — how hard it is for current to get through
   voltage?: number; // battery push, in volts
   capacitance?: number; // farads
   maxAmps?: number; // fuse melts above this many amps
   heatK: number; // watts of cooling per degree above room temperature
   heatMass: number; // joules needed to warm it by one degree
+  explodeAt: number; // °C at which the part blows apart (Infinity = never)
   minR?: number;
   maxR?: number; // slider range when resistance is editable
 }
@@ -42,7 +51,30 @@ export const WIRE_R = 0.01;
 export const BATTERY_INTERNAL_R = 0.05;
 export const LED_DROP = 2; // volts an LED eats before it lights
 export const LED_ON_R = 5;
+export const DIODE_DROP = 0.7;
+export const DIODE_ON_R = 2;
+export const CAP_MAX_VOLTS = 60; // capacitors pop above this
 const GMIN = 1e-9; // tiny leak to ground so the math never divides by zero
+
+export const NOTES: { name: string; hz: number }[] = [
+  { name: "C", hz: 261.63 },
+  { name: "D", hz: 293.66 },
+  { name: "E", hz: 329.63 },
+  { name: "F", hz: 349.23 },
+  { name: "G", hz: 392.0 },
+  { name: "A", hz: 440.0 },
+  { name: "B", hz: 493.88 },
+  { name: "C high", hz: 523.25 },
+];
+
+export const LED_COLORS: Record<LedColor, string> = {
+  red: "#ff5a49",
+  amber: "#ffb020",
+  green: "#4ade80",
+  blue: "#5aa9ff",
+  white: "#f4f6ff",
+  purple: "#c084fc",
+};
 
 export const CATALOG: Record<PartType, PartDef> = {
   wire: {
@@ -54,10 +86,11 @@ export const CATALOG: Record<PartType, PartDef> = {
     resistance: WIRE_R,
     heatK: 1.5,
     heatMass: 20,
+    explodeAt: 700,
   },
   battery: {
     label: "Battery",
-    hint: "Pushes current around the loop. Turn it up to 120 volts.",
+    hint: "Pushes current around the loop. Goes up to 120 volts.",
     len: 110,
     rigid: true,
     category: "Build",
@@ -65,6 +98,7 @@ export const CATALOG: Record<PartType, PartDef> = {
     voltage: 9,
     heatK: 2.5,
     heatMass: 150,
+    explodeAt: 420,
   },
   switch: {
     label: "Switch",
@@ -75,6 +109,7 @@ export const CATALOG: Record<PartType, PartDef> = {
     resistance: 0.005,
     heatK: 1,
     heatMass: 30,
+    explodeAt: 550,
   },
   resistor: {
     label: "Resistor",
@@ -87,6 +122,7 @@ export const CATALOG: Record<PartType, PartDef> = {
     maxR: 1000,
     heatK: 0.05,
     heatMass: 8,
+    explodeAt: 380,
   },
   bulb: {
     label: "Light bulb",
@@ -99,20 +135,33 @@ export const CATALOG: Record<PartType, PartDef> = {
     maxR: 200,
     heatK: 0.08,
     heatMass: 12,
+    explodeAt: 600,
   },
   led: {
     label: "LED",
-    hint: "Lights up, but only if current flows the right way.",
+    hint: "A little colored light. Only works one way around.",
     len: 90,
     rigid: true,
     category: "Build",
     resistance: LED_ON_R,
     heatK: 0.05,
     heatMass: 5,
+    explodeAt: 320,
+  },
+  diode: {
+    label: "Diode",
+    hint: "A one-way street for current. No light, just direction.",
+    len: 90,
+    rigid: true,
+    category: "Build",
+    resistance: DIODE_ON_R,
+    heatK: 0.05,
+    heatMass: 6,
+    explodeAt: 330,
   },
   capacitor: {
     label: "Capacitor",
-    hint: "Stores charge, then gives it back. Watch it fill and empty.",
+    hint: "Stores charge, then gives it back. Pops above 60 volts!",
     len: 95,
     rigid: true,
     category: "Build",
@@ -120,6 +169,7 @@ export const CATALOG: Record<PartType, PartDef> = {
     capacitance: 0.1,
     heatK: 1,
     heatMass: 50,
+    explodeAt: 300,
   },
   fuse: {
     label: "Fuse",
@@ -131,26 +181,51 @@ export const CATALOG: Record<PartType, PartDef> = {
     maxAmps: 10,
     heatK: 0.5,
     heatMass: 5,
+    explodeAt: 800,
+  },
+  button: {
+    label: "Key button",
+    hint: "Only lets current through while you hold its keyboard letter. Build a piano!",
+    len: 100,
+    rigid: true,
+    category: "Inputs & sound",
+    resistance: 0.005,
+    heatK: 1,
+    heatMass: 30,
+    explodeAt: 550,
+  },
+  blinker: {
+    label: "Blinker",
+    hint: "Flips itself on and off, over and over. Great for light shows.",
+    len: 100,
+    rigid: true,
+    category: "Inputs & sound",
+    resistance: 0.005,
+    heatK: 1,
+    heatMass: 30,
+    explodeAt: 450,
   },
   speaker: {
     label: "Speaker",
-    hint: "Makes real sound. More volts = higher pitch, more current = louder.",
+    hint: "Makes real sound. Pick the note it plays, or let the volts pick the pitch.",
     len: 100,
     rigid: true,
-    category: "Build",
+    category: "Inputs & sound",
     resistance: 8,
     heatK: 0.3,
     heatMass: 30,
+    explodeAt: 380,
   },
   motor: {
-    label: "Fan motor",
-    hint: "Spins faster with more current. Flip the current, it spins backwards.",
+    label: "Motor",
+    hint: "Spins with current. Bolt on fan blades, a wheel, a propeller, or a crane winch.",
     len: 110,
     rigid: true,
     category: "Build",
     resistance: 10,
     heatK: 0.5,
     heatMass: 60,
+    explodeAt: 420,
   },
   ammeter: {
     label: "Ammeter",
@@ -161,6 +236,7 @@ export const CATALOG: Record<PartType, PartDef> = {
     resistance: 0.01,
     heatK: 1,
     heatMass: 40,
+    explodeAt: 380,
   },
   voltmeter: {
     label: "Voltmeter",
@@ -171,10 +247,11 @@ export const CATALOG: Record<PartType, PartDef> = {
     resistance: 1e7,
     heatK: 1,
     heatMass: 40,
+    explodeAt: 380,
   },
   heater: {
     label: "Space heater",
-    hint: "A real heater is just a big resistor. Needs ~120 volts to get hot.",
+    hint: "A real heater is just a big resistor. Needs ~120 volts to get properly hot.",
     len: 130,
     rigid: true,
     category: "Real things",
@@ -183,6 +260,7 @@ export const CATALOG: Record<PartType, PartDef> = {
     maxR: 60,
     heatK: 1.8,
     heatMass: 120,
+    explodeAt: 900,
   },
   hairdryer: {
     label: "Hair dryer",
@@ -195,6 +273,7 @@ export const CATALOG: Record<PartType, PartDef> = {
     maxR: 60,
     heatK: 2,
     heatMass: 100,
+    explodeAt: 520,
   },
   coin: {
     label: "Coin",
@@ -205,6 +284,7 @@ export const CATALOG: Record<PartType, PartDef> = {
     resistance: 0.005,
     heatK: 1,
     heatMass: 40,
+    explodeAt: 950,
   },
   eraser: {
     label: "Eraser",
@@ -215,6 +295,7 @@ export const CATALOG: Record<PartType, PartDef> = {
     resistance: 1e9,
     heatK: 1,
     heatMass: 40,
+    explodeAt: 400,
   },
   hand: {
     label: "Your hand",
@@ -225,6 +306,7 @@ export const CATALOG: Record<PartType, PartDef> = {
     resistance: 100000,
     heatK: 1,
     heatMass: 100,
+    explodeAt: Infinity,
   },
 };
 
@@ -238,18 +320,28 @@ export interface Part {
   id: string;
   type: PartType;
   a: string; // vertex id of one end
-  b: string; // vertex id of the other end (battery: + end, LED: arrow points a → b)
+  b: string; // the other end (battery: + end; LED/diode arrow points a → b)
   resistance: number;
   voltage: number; // battery push
   capacitance: number;
   maxAmps: number; // fuse limit
   closed: boolean; // switch position
+  pressed: boolean; // key button held down right now
+  key: string; // keyboard letter bound to a key button
+  hz: number; // blinker flips per second
+  phase: number; // blinker clock
+  color: LedColor; // LED color
+  mode: SpeakerMode; // speaker: fixed note, or pitch follows volts
+  noteHz: number; // speaker note frequency
+  attachment: MotorAttachment; // what's bolted onto a motor
+  lift: number; // 0..1 — how high a winch has hauled its crate
   blown: boolean; // fuse melted
-  ledOn: boolean;
+  destroyed: boolean; // part exploded — permanently an open circuit
+  ledOn: boolean; // shared by LED and diode ("is it conducting")
   temp: number; // °C
   capV: number; // volts stored on a capacitor right now
   flow: number; // animation offset for the moving current dots
-  spin: number; // fan blade angle
+  spin: number; // rotor angle
   current: number; // amps flowing a → b (last solve)
   volts: number; // voltage from a to b (last solve)
 }
@@ -274,22 +366,26 @@ export function bumpIdsPast(circ: Circuit) {
   }
 }
 
-export function createPart(type: PartType, x: number, y: number, circ: Circuit): Part {
+export function blankPart(type: PartType): Omit<Part, "id" | "a" | "b"> {
   const def = CATALOG[type];
-  const va: Vertex = { id: uid("v"), x: x - def.len / 2, y };
-  const vb: Vertex = { id: uid("v"), x: x + def.len / 2, y };
-  circ.vertices.push(va, vb);
-  const part: Part = {
-    id: uid("p"),
+  return {
     type,
-    a: va.id,
-    b: vb.id,
     resistance: def.resistance,
     voltage: def.voltage ?? 0,
     capacitance: def.capacitance ?? 0,
     maxAmps: def.maxAmps ?? 0,
     closed: false,
+    pressed: false,
+    key: "",
+    hz: 2,
+    phase: 0,
+    color: "red",
+    mode: "note",
+    noteHz: NOTES[0].hz,
+    attachment: "fan",
+    lift: 0,
     blown: false,
+    destroyed: false,
     ledOn: false,
     temp: ROOM_TEMP,
     capV: 0,
@@ -298,6 +394,14 @@ export function createPart(type: PartType, x: number, y: number, circ: Circuit):
     current: 0,
     volts: 0,
   };
+}
+
+export function createPart(type: PartType, x: number, y: number, circ: Circuit): Part {
+  const def = CATALOG[type];
+  const va: Vertex = { id: uid("v"), x: x - def.len / 2, y };
+  const vb: Vertex = { id: uid("v"), x: x + def.len / 2, y };
+  circ.vertices.push(va, vb);
+  const part: Part = { id: uid("p"), a: va.id, b: vb.id, ...blankPart(type) };
   circ.parts.push(part);
   return part;
 }
@@ -307,7 +411,7 @@ export function createPart(type: PartType, x: number, y: number, circ: Circuit):
 //   current from a to b  =  g × (Va − Vb + emf)
 // Resistors: g = 1/R, emf = 0.  Battery: g = 1/internalR, emf = its voltage.
 // Capacitor (backward Euler): g = C/dt, emf = −(volts it held last frame).
-// LED when on: g = 1/5Ω, emf = −2V (the drop it eats).
+// LED/diode when on: g = 1/onR, emf = −(the drop it eats).
 
 interface Model {
   g: number;
@@ -315,12 +419,16 @@ interface Model {
 }
 
 function modelFor(p: Part, dt: number): Model | null {
-  if (p.a === p.b) return null;
+  if (p.a === p.b || p.destroyed) return null;
   switch (p.type) {
     case "battery":
       return { g: 1 / BATTERY_INTERNAL_R, emf: p.voltage };
     case "switch":
       return p.closed ? { g: 1 / p.resistance, emf: 0 } : null;
+    case "button":
+      return p.pressed ? { g: 1 / p.resistance, emf: 0 } : null;
+    case "blinker":
+      return (p.phase * p.hz) % 1 < 0.5 ? { g: 1 / p.resistance, emf: 0 } : null;
     case "fuse":
       return p.blown ? null : { g: 1 / p.resistance, emf: 0 };
     case "capacitor": {
@@ -328,12 +436,24 @@ function modelFor(p: Part, dt: number): Model | null {
       return { g, emf: -p.capV };
     }
     case "led":
-      return p.ledOn ? { g: 1 / LED_ON_R, emf: -LED_DROP } : { g: 1e-9, emf: 0 };
+      // off-state leak (10 MΩ) is deliberately much bigger than GMIN so a
+      // dead-ended LED's floating node follows its neighbor instead of the
+      // solver's ground reference — otherwise the on/off check oscillates
+      return p.ledOn ? { g: 1 / LED_ON_R, emf: -LED_DROP } : { g: 1e-7, emf: 0 };
+    case "diode":
+      return p.ledOn ? { g: 1 / DIODE_ON_R, emf: -DIODE_DROP } : { g: 1e-7, emf: 0 };
     case "eraser":
       return { g: 1e-9, emf: 0 };
     default:
       return { g: 1 / Math.max(p.resistance, 1e-6), emf: 0 };
   }
+}
+
+function dropOf(type: PartType): number {
+  return type === "diode" ? DIODE_DROP : LED_DROP;
+}
+function onROf(type: PartType): number {
+  return type === "diode" ? DIODE_ON_R : LED_ON_R;
 }
 
 function solveLinear(A: number[][], b: number[]): number[] | null {
@@ -402,28 +522,44 @@ function solveOnce(circ: Circuit, dt: number): Map<string, number> {
   return volts;
 }
 
-export function stepCircuit(circ: Circuit, dt: number) {
-  // LEDs are on/off depending on the answer, and the answer depends on the
-  // LEDs — so solve, flip any LED whose state was wrong, and solve again.
+export interface StepEvents {
+  exploded: Part[]; // parts that blew apart this frame
+  fusesBlown: Part[];
+}
+
+export function stepCircuit(circ: Circuit, dt: number): StepEvents {
+  const events: StepEvents = { exploded: [], fusesBlown: [] };
+
+  // advance blinker clocks before solving so their state is current
+  for (const p of circ.parts) {
+    if (p.type === "blinker") p.phase += dt;
+  }
+
+  // LEDs/diodes are on or off depending on the answer, and the answer depends
+  // on them — so solve, flip any whose state was wrong, and solve again.
   let volts = new Map<string, number>();
   for (let iter = 0; iter < 8; iter++) {
     volts = solveOnce(circ, dt);
     let changed = false;
     for (const p of circ.parts) {
-      if (p.type !== "led") continue;
+      if ((p.type !== "led" && p.type !== "diode") || p.destroyed) continue;
       const v = (volts.get(p.a) ?? 0) - (volts.get(p.b) ?? 0);
+      const drop = dropOf(p.type);
       if (p.ledOn) {
-        const i = (v - LED_DROP) / LED_ON_R;
+        const i = (v - drop) / onROf(p.type);
         if (i < 1e-6) {
           p.ledOn = false;
           changed = true;
         }
-      } else if (v > LED_DROP + 1e-6) {
+      } else if (v > drop + 1e-6) {
         p.ledOn = true;
         changed = true;
       }
     }
     if (!changed) break;
+    // states flipped after this solve — if we're out of iterations, solve
+    // once more so every reading is consistent with the final states
+    if (iter === 7) volts = solveOnce(circ, dt);
   }
 
   for (const p of circ.parts) {
@@ -435,29 +571,44 @@ export function stepCircuit(circ: Circuit, dt: number) {
     p.current = m ? m.g * (p.volts + m.emf) : 0;
     if (!isFinite(p.current)) p.current = 0;
 
-    if (p.type === "capacitor") p.capV = p.volts;
+    if (p.type === "capacitor" && !p.destroyed) p.capV = p.volts;
 
-    // Heat: power turns into temperature, and hot parts cool toward room temp.
+    // Heat: power turns into temperature; hot parts cool toward room temp.
     let watts = 0;
-    if (p.type === "battery") watts = p.current * p.current * BATTERY_INTERNAL_R;
-    else if (p.type === "led") watts = Math.abs(p.current * p.volts) * 0.7;
+    if (p.destroyed) watts = 0;
+    else if (p.type === "battery") watts = p.current * p.current * BATTERY_INTERNAL_R;
+    else if (p.type === "led" || p.type === "diode") watts = Math.abs(p.current * p.volts) * 0.7;
     else if (p.type === "capacitor") watts = 0;
     else if (m && m.g > 1e-8) watts = (p.current * p.current) / m.g;
     p.temp += ((watts - def.heatK * (p.temp - ROOM_TEMP)) * dt) / def.heatMass;
     p.temp = Math.min(Math.max(p.temp, ROOM_TEMP), 1200);
 
-    // Fuse melts the instant too much current flows.
+    // Consequences.
     if (p.type === "fuse" && !p.blown && Math.abs(p.current) > p.maxAmps) {
       p.blown = true;
+      events.fusesBlown.push(p);
+    }
+    if (!p.destroyed && p.temp >= def.explodeAt) {
+      p.destroyed = true;
+      events.exploded.push(p);
+    }
+    if (p.type === "capacitor" && !p.destroyed && Math.abs(p.capV) > CAP_MAX_VOLTS) {
+      p.destroyed = true;
+      events.exploded.push(p);
     }
 
-    // Animation: moving dots, spinning blades.
+    // Animation: moving dots, spinning rotors, hauling winches.
     const speed = Math.max(-170, Math.min(170, p.current * 40));
     p.flow += speed * dt;
     if (p.type === "motor" || p.type === "hairdryer") {
       p.spin += Math.max(-1600, Math.min(1600, p.current * 420)) * dt;
+      if (p.type === "motor" && p.attachment === "winch") {
+        p.lift = Math.min(1, Math.max(0, p.lift + p.current * 0.12 * dt));
+      }
     }
   }
+
+  return events;
 }
 
 // ——— geometry helpers ———
