@@ -148,8 +148,6 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
   const volumeToastShownRef = useRef(false);
   const lastVolWarnRef = useRef(0);
   const momentumRef = useRef({ vx: 0, vy: 0, vaz: 0, vpol: 0 });
-  // where the next zoom-in dives: the last place you clicked on the blue mat
-  const zoomAnchorRef = useRef({ x: BENCH.cx, y: BENCH.cy });
 
   const [, setFrame] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -638,10 +636,15 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
       const f = Math.exp(e.deltaY * 0.0016);
       cam.dist = clamp(cam.dist * f, 26, 18000);
       if (f < 1) {
-        // zooming in pulls the view toward the last spot you clicked on the mat
-        const a = zoomAnchorRef.current;
-        cam.tx += (a.x - cam.tx) * (1 - f);
-        cam.ty += (a.y - cam.ty) * (1 - f);
+        // zooming in dives toward the cursor — snapped to the nearest point
+        // on the mat if the cursor is off in the room somewhere
+        const under = apiRef.current?.toWorld(e.clientX, e.clientY);
+        if (under) {
+          const ax = clamp(under.x, BENCH.cx - BENCH.w / 2, BENCH.cx + BENCH.w / 2);
+          const ay = clamp(under.y, BENCH.cy - BENCH.h / 2, BENCH.cy + BENCH.h / 2);
+          cam.tx += (ax - cam.tx) * (1 - f);
+          cam.ty += (ay - cam.ty) * (1 - f);
+        }
       } else {
         // zooming out settles back over the center of the table
         cam.tx += (BENCH.cx - cam.tx) * (1 - 1 / f);
@@ -1081,19 +1084,6 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
       if (!pk) return;
       const circ = circuitRef.current;
       setSymbolTip(null);
-      {
-        // remember where on the mat this press landed — zoom dives there next
-        const w = pk.kind === "bg" ? { x: pk.x, y: pk.y } : apiRef.current?.toWorld(e.clientX, e.clientY);
-        if (
-          w &&
-          w.x >= BENCH.cx - BENCH.w / 2 &&
-          w.x <= BENCH.cx + BENCH.w / 2 &&
-          w.y >= BENCH.cy - BENCH.h / 2 &&
-          w.y <= BENCH.cy + BENCH.h / 2
-        ) {
-          zoomAnchorRef.current = { x: w.x, y: w.y };
-        }
-      }
       if (pk.kind === "label") {
         const host = boardDivRef.current?.getBoundingClientRect();
         setSymbolTip({
@@ -1481,9 +1471,10 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
       className="h-full w-full flex flex-col bg-[var(--bg)] text-[var(--ink)] select-none overflow-hidden"
       onPointerDown={ensureAudio}
     >
-      <div className="flex flex-1 min-h-0">
+      {/* phone-width: the shelf tucks under the board instead of beside it */}
+      <div className="flex flex-1 min-h-0 flex-col-reverse sm:flex-row">
         {/* toolbox: single parts first, big builds at the bottom */}
-        <aside className="w-44 md:w-56 p-2 border-r shrink-0 overflow-y-auto border-[var(--line)] bg-[var(--panel)]">
+        <aside className="w-full h-52 border-t sm:w-44 md:w-56 sm:h-auto sm:border-t-0 sm:border-r p-2 shrink-0 overflow-y-auto border-[var(--line)] bg-[var(--panel)]">
           <button
             className={`${toolMode === "select" ? "btn btn-primary" : "btn"} mb-3 w-full justify-center`}
             aria-pressed={toolMode === "select"}
