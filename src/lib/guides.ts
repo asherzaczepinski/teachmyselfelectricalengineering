@@ -228,7 +228,7 @@ export const GUIDES: Guide[] = [
     tagline: "Why you never connect + straight to −.",
     steps: [
       "This loop is a battery connected to itself through nothing but wire. No bulb, no resistor — nothing to slow the current down.",
-      "Turn on Heat view up top, then close the switch.",
+      "Close the switch and keep your eyes on the wires.",
       "A huge current flows. The wires warm up, then the battery starts cooking itself.",
       "Wait for it… the battery catches fire and eventually explodes. You can press Delete to put it out of its misery, or watch the fireworks.",
       "Try it again with a fuse in the loop and see how the fuse saves the battery.",

@@ -1,5 +1,5 @@
-import CircuitLab from "../components/lab/CircuitLab";
+import Welcome from "../components/Welcome";
 
-export default function Home() {
-  return <CircuitLab />;
+export default function HomePage() {
+  return <Welcome />;
 }

@@ -14,9 +14,9 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Circuit Lab — build real circuits",
+  title: "Circuit Lab — teach yourself electricity by building",
   description:
-    "Drag batteries, bulbs, heaters, speakers and more onto the board, wire them up, and watch real current, light, heat and sound.",
+    "A hands-on course and sandbox with a real circuit solver: light bulbs, blow fuses, wire a piano, and compute 1+1 with magnets.",
 };
 
 export default function RootLayout({
