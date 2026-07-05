@@ -565,6 +565,48 @@ export function buildPart(p: Part, L: number): PartHandle {
       update = (p2) => (face.emissiveIntensity = p2.sense * 0.5);
       break;
     }
+    case "memory": {
+      // a little register box: stores one number, shows it on a lit screen
+      leads(g, L, pad);
+      const caseMat = new THREE.MeshStandardMaterial({ color: 0x4c3f8f, roughness: 0.5 });
+      g.add(boxAt(52, 34, 14, caseMat, cx, 0, LEAD_Z + 2));
+      g.add(boxAt(56, 38, 5, new THREE.MeshStandardMaterial({ color: 0x241d47, roughness: 0.7 }), cx, 0, LEAD_Z - 2));
+      const lcd = document.createElement("canvas");
+      lcd.width = 192;
+      lcd.height = 96;
+      const lctx = lcd.getContext("2d")!;
+      const lcdTex = new THREE.CanvasTexture(lcd);
+      const screen = new THREE.Mesh(
+        new THREE.PlaneGeometry(38, 19),
+        new THREE.MeshStandardMaterial({ map: lcdTex, roughness: 0.3, emissive: 0xffffff, emissiveMap: lcdTex, emissiveIntensity: 0.7 })
+      );
+      screen.position.set(cx, 2, LEAD_Z + 9.3);
+      g.add(screen);
+      // a tiny lamp that lights while it feels current (the moment it counts)
+      const pulse = new THREE.MeshStandardMaterial({ color: 0x1d3b2a, emissive: 0x34d399, emissiveIntensity: 0 });
+      g.add(boxAt(5, 5, 3, pulse, cx + 20, -12, LEAD_Z + 9.5));
+      let lastMem = -1;
+      const drawMem = (n: number) => {
+        lctx.fillStyle = "#101726";
+        lctx.fillRect(0, 0, 192, 96);
+        lctx.fillStyle = "#7ce7ff";
+        lctx.font = "700 60px 'IBM Plex Mono', ui-monospace, monospace";
+        lctx.textAlign = "center";
+        lctx.textBaseline = "middle";
+        lctx.fillText(String(n), 96, 52);
+        lcdTex.needsUpdate = true;
+      };
+      drawMem(0);
+      update = (p2) => {
+        const n = Math.round(p2.mem);
+        if (n !== lastMem) {
+          lastMem = n;
+          drawMem(n);
+        }
+        pulse.emissiveIntensity = p2.memOn ? 1.6 : 0;
+      };
+      break;
+    }
     case "ammeter":
     case "voltmeter": {
       // a real handheld multimeter lying on the bench

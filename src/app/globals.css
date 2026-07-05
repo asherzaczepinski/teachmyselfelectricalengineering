@@ -66,7 +66,7 @@ button {
   font-size: 12px;
   font-weight: 500;
   padding: 5px 10px;
-  border-radius: 7px;
+  border-radius: 0;
   border: 1px solid var(--line);
   color: var(--ink-2);
   background: transparent;
@@ -107,7 +107,7 @@ button {
 .seg {
   display: inline-flex;
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 0;
   overflow: hidden;
 }
 .seg > button {
@@ -144,7 +144,7 @@ button {
 .tool-item {
   width: 100%;
   text-align: left;
-  border-radius: 9px;
+  border-radius: 0;
   border: 1px solid transparent;
   padding: 6px 8px;
   cursor: grab;
@@ -172,7 +172,7 @@ input[type="range"].sim-slider {
 }
 input[type="range"].sim-slider::-webkit-slider-runnable-track {
   height: 4px;
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--line);
 }
 input[type="range"].sim-slider::-webkit-slider-thumb {
@@ -181,20 +181,20 @@ input[type="range"].sim-slider::-webkit-slider-thumb {
   margin-top: -7px;
   width: 18px;
   height: 18px;
-  border-radius: 50%;
+  border-radius: 0;
   background: var(--panel);
   border: 2.5px solid var(--accent);
   box-shadow: 0 1px 3px rgb(0 0 0 / 0.5);
 }
 input[type="range"].sim-slider::-moz-range-track {
   height: 4px;
-  border-radius: 2px;
+  border-radius: 0;
   background: var(--line);
 }
 input[type="range"].sim-slider::-moz-range-thumb {
   width: 13px;
   height: 13px;
-  border-radius: 50%;
+  border-radius: 0;
   background: var(--panel);
   border: 2.5px solid var(--accent);
 }
@@ -203,7 +203,7 @@ select.sim-select,
 input.sim-input {
   background: var(--panel-2);
   border: 1px solid var(--line);
-  border-radius: 7px;
+  border-radius: 0;
   color: var(--ink);
   font-size: 12px;
   padding: 5px 8px;

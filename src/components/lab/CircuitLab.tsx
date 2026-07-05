@@ -10,13 +10,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   blankPart,
   CATALOG,
-  CHANNEL_COLORS,
   Circuit,
-  LED_COLORS,
-  LedColor,
   LETTER_SECONDS,
-  MotorAttachment,
-  NOTES,
   Part,
   PartType,
   PHONE_DEFAULT,
@@ -33,7 +28,9 @@ import {
 import { GUIDES } from "../../lib/guides";
 import { Model, MODELS } from "../../lib/models";
 import { Glyph } from "./Glyph";
-import { fmtAmps, fmtVolts } from "../../lib/fmt";
+import { TOOLBOX, microMaterial, explainSymbols } from "./content";
+import { Inspector } from "./Inspector";
+import { OrientationBall } from "./OrientationBall";
 import ThreeBoard, {
   BENCH,
   BoardApi,
@@ -46,166 +43,6 @@ const FOV_RAD = (40 * Math.PI) / 180;
 
 const SNAP = 20; // how close two end dots must get before they connect
 const KEY_POOL = "asdfghjklqwertyuiop";
-
-export const TOOLBOX: { title: string; items: PartType[] }[] = [
-  {
-    title: "Build",
-    items: [
-      "wire",
-      "battery",
-      "usbc",
-      "switch",
-      "resistor",
-      "bulb",
-      "led",
-      "diode",
-      "segment",
-      "capacitor",
-      "inductor",
-      "fuse",
-      "motor",
-    ],
-  },
-  { title: "Inputs & sound", items: ["button", "blinker", "speaker", "buzzer"] },
-  { title: "Measure", items: ["ammeter", "voltmeter"] },
-  {
-    title: "Logic & sensors",
-    items: ["coil", "relay", "lightsensor", "heatsensor", "solar", "chip", "calculator"],
-  },
-];
-
-// deeper explanations shown in learning mode when you hover a part
-export const LEARN: Record<PartType, string> = {
-  wire: "Wire is the road the current drives on. It barely resists at all — but push a huge current through and even wire heats up. That's why house wiring has thickness rules.",
-  battery: "The battery is the pump. It doesn't 'contain' current — it pushes the current that's already in the wires around the loop. More volts = a harder push. It also warms up inside when it works hard.",
-  switch: "A switch is just a gap you can open and close. Open gap = broken loop = zero current everywhere in that loop, instantly.",
-  resistor: "A resistor is a narrow spot in the road. It turns some of the electrical push into heat. Ohm's law in plain words: current = push ÷ resistance.",
-  bulb: "A bulb is a resistor that runs so hot its little wire glows. The brightness you see is real power: volts across it × amps through it.",
-  led: "An LED makes light directly from current — no heat-glow needed, so it barely warms up. But it's a one-way door, and it always eats about 2 volts as its entry fee.",
-  segment: "One bar of a digital number. Feed it current and it glows. Arrange seven in the classic 8 shape, give each its own switch, and you can draw every digit — that's exactly what's inside an alarm clock.",
-  diode: "A diode is a one-way door for current. Current flows along the arrow, never against it. Used to protect things from being plugged in backwards.",
-  capacitor: "A capacitor is a tiny rechargeable bucket for charge. Current flows in until it's full, then stops. Cut the power and it pours its charge back out. Overfill it past 60 volts and it pops.",
-  fuse: "A fuse is a bodyguard that dies for you. It's a thin wire that melts the moment the current passes its limit, breaking the loop before anything expensive burns.",
-  button: "A momentary switch — closed only while you hold it. Real keyboards, doorbells and game controllers are grids of these.",
-  blinker: "A switch that flips itself on a timer. Real ones use a tiny chip; old ones used a strip of metal that bent as it heated up.",
-  speaker: "A speaker turns wiggling current into wiggling air, which is all sound is. Pitch is how fast it wiggles; loudness is how hard.",
-  motor: "A motor turns current into spin using magnets. Reverse the current and the spin reverses. Whatever you bolt on — wheel, propeller, winch — inherits the spin.",
-  ammeter: "Counts amps flowing THROUGH it, so it must sit inside the loop. It resists almost nothing so it doesn't disturb what it's measuring.",
-  voltmeter: "Measures the voltage difference between its two ends, so it hangs ACROSS a part from outside the loop. It resists so much that almost no current detours through it.",
-  heater: "A space heater is nothing but a big resistor with a fan. 100% of the electrical energy becomes heat — that's why heaters are the hungriest appliances in a house.",
-  hairdryer: "A heater coil and a fan motor sharing one plug. It needs wall-outlet voltage (about 120 volts) to actually get hot — try it on 9 volts and it barely whispers.",
-  coin: "Metal is full of electrons that are free to move, so a coin conducts almost like a wire. This is why dropping metal across battery terminals is a bad day.",
-  eraser: "Rubber holds its electrons tight — none free to move, so no current, period. That's an insulator, and it's why plugs are coated in it.",
-  hand: "Skin resists a lot — but not infinitely. A 9 volt battery can't push a dangerous current through you. A 120 volt outlet can. That's the whole reason outlets deserve respect.",
-  outlet: "A pretend wall socket: a steady 120 volt push, way more than any battery here. It's what real heaters and hair dryers are built for — and why shorting one is a fireworks show.",
-  inductor: "A coil of wire that hates change. Current through it can't jump — it has to ramp up, and when you cut the power it fights back with a voltage kick. The magnetic partner of the capacitor.",
-  buzzer: "The simplest noisemaker: one fixed, rude tone. More current just makes it louder. Real ones are a little disc that bends thousands of times a second.",
-  voicebox: "A tiny speech machine. Every letter gets its own mouth-shape sound — vowels hum at two special frequencies, S hisses, P pops. The first real one (Bell Labs' Voder, 1939) worked exactly this way, played live from a keyboard.",
-  coil: "Wrap wire in loops and run current through it — you get a magnet you can switch on and off. Every magnetic switch tuned to its channel number feels it, no wires needed.",
-  relay: "A switch flipped by a coil's magnetism instead of your finger. Chain these and you can compute: two in a row = AND, side by side = OR, a 'flipped' one = NOT. Rooms full of these were the first computers.",
-  lightsensor: "In the dark it resists like rubber; in bright light it conducts almost happily. Park it near a bulb and it becomes an eye for your circuit.",
-  heatsensor: "Its resistance falls as things near it heat up. Pair it with a coil and a magnetic switch and you've built a genuine fire alarm.",
-  solar: "Light knocks electrons loose in the panel, and that IS a voltage. The brighter the light landing on it, the harder it pushes. Free power — as long as something shines on it.",
-  chip: "A microcontroller — a whole computer the size of a fingernail, ready to be programmed. Power its two pins and its onboard light blinks its 'I'm alive' heartbeat. Later steps will teach it tricks; for now it's the newest tool on your bench.",
-  usbc: "The little connector that took over the world. Any phone charger pushes five steady, safe volts through it — which is why USB-C is the modern bench power supply for small electronics.",
-  calculator: "Inside this box are thousands of the same magnetic-switch tricks you can build yourself — the 1+1 adder, repeated and chained until it can multiply and divide. Real chips just shrink those switches down to specks of silicon. No power, no math: it's a circuit part like any other.",
-};
-
-// ——— the microscope: what you see when you zoom all the way into a part ———
-
-interface MicroMaterial {
-  title: string;
-  atoms: string;
-  electrons: string;
-  atomFill: string;
-  atomStroke: string;
-  freeElectrons: boolean;
-  split?: boolean; // draw two different materials meeting in the middle
-}
-
-function microMaterial(t: PartType): MicroMaterial {
-  if (t === "battery" || t === "outlet" || t === "solar")
-    return {
-      title: "a power source",
-      atoms:
-        "Two different materials with hungry chemistry between them: one side wants electrons badly, the other wants rid of them. That chemical tug-of-war is the push you call voltage.",
-      electrons:
-        "Electrons get grabbed in at one plate and shoved out the other. The volts number is just how hard the chemistry shoves.",
-      atomFill: "#3f4a3a",
-      atomStroke: "#6d825f",
-      freeElectrons: true,
-      split: true,
-    };
-  if (t === "led" || t === "diode")
-    return {
-      title: "a one-way junction",
-      atoms:
-        "Two slightly different crystals meet in the middle. The left one has spare electrons; the right one has empty seats (holes) for them.",
-      electrons:
-        "Electrons can FALL across the junction one way — in an LED that fall releases a flash of light — but climbing back up is nearly impossible. That's the whole one-way trick.",
-      atomFill: "#4a3a55",
-      atomStroke: "#7a5f8f",
-      freeElectrons: true,
-      split: true,
-    };
-  if (t === "capacitor")
-    return {
-      title: "two plates and a gap",
-      atoms:
-        "Two metal plates and, between them — nothing. Electrons can pile up on one plate and scare electrons off the other, but none ever cross.",
-      electrons:
-        "Watch the crowding: charge 'stored' in a capacitor is just electrons packed shoulder-to-shoulder on one side of a gap they can't jump.",
-      atomFill: "#3d4b63",
-      atomStroke: "#5d7396",
-      freeElectrons: true,
-      split: true,
-    };
-  if (t === "calculator" || t === "voicebox")
-    return {
-      title: "a city of switches",
-      atoms:
-        "This isn't one material — it's a built city. Millions of microscopic one-way junctions (the same kind inside an LED) wired into switches that flip each other.",
-      electrons:
-        "Every calculation is electrons being allowed through some junctions and refused at others, millions of times a second.",
-      atomFill: "#33404f",
-      atomStroke: "#567191",
-      freeElectrons: true,
-    };
-  if (
-    t === "resistor" ||
-    t === "bulb" ||
-    t === "heater" ||
-    t === "hairdryer" ||
-    t === "segment" ||
-    t === "speaker" ||
-    t === "buzzer" ||
-    t === "motor" ||
-    t === "coil" ||
-    t === "lightsensor" ||
-    t === "heatsensor" ||
-    t === "hand"
-  )
-    return {
-      title: "a rough material",
-      atoms:
-        "The atoms here are jumbled and packed tight — a rough neighborhood. Squeezing between them costs the electrons energy, and every bit of lost energy becomes heat. That IS what resistance means.",
-      electrons:
-        "Watch them bump and stagger. Each collision shakes an atom, and shaking atoms is literally what heat is — that's why hard-working resistors get hot.",
-      atomFill: "#4f3a35",
-      atomStroke: "#8a5f52",
-      freeElectrons: true,
-    };
-  return {
-    title: "a metal",
-    atoms:
-      "Copper atoms packed in a neat crystal — see the tidy rows? Metals are orderly, and every atom donates one electron to a shared sea that's free to slosh anywhere. Those loose electrons ARE the current.",
-    electrons:
-      "The blue dots are the electron sea. The atoms stay put; only the electrons travel.",
-    atomFill: "#4a3d2e",
-    atomStroke: "#8a6f4a",
-    freeElectrons: true,
-  };
-}
 
 function pseudo(i: number, j: number): number {
   const s = Math.sin(i * 127.1 + j * 311.7) * 43758.5453;
@@ -221,12 +58,14 @@ type Drag =
       holdTargetId?: string; // soldering: the dot we're hovering to fuse with
       holdStart?: number;
     }
-  | { kind: "pan"; lastX: number; lastY: number; downX: number; downY: number; moved: number }
   | { kind: "marquee"; x0: number; y0: number; x1: number; y1: number }
-  | { kind: "lamp"; offX: number; offY: number }
+  | { kind: "pan"; lastX: number; lastY: number }
+  | { kind: "group"; lastX: number; lastY: number }
+  | { kind: "gizmo"; axis: "x" | "z" | "xy"; partId: string; lastX: number; lastY: number }
   | { kind: "orbit"; lastX: number; lastY: number };
 
 const SOLDER_MS = 850; // hold a dot on a dot this long and it fuses
+const POLAR_MAX = 1.45; // radians from straight-down: nearly eye-level with the table
 
 // a little soldering-iron cursor for when you're about to fuse a joint
 const IRON_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
@@ -234,26 +73,6 @@ const IRON_CURSOR = `url("data:image/svg+xml,${encodeURIComponent(
 )}") 3 25, crosshair`;
 
 // what the letters and symbols on the board mean, in plain words
-const SYMBOL_GLOSS: [RegExp, string][] = [
-  [/Ω/, "Ω (the Greek letter omega) = ohms — how hard the part resists current"],
-  [/\bmA\b/, "mA = milliamps — thousandths of an amp of flow"],
-  [/\bmV\b/, "mV = millivolts — thousandths of a volt of push"],
-  [/\bA\b/, "A = amps — how much charge flows past per second"],
-  [/\bV\b/, "V = volts — how hard the push is between two points"],
-  [/\bW\b/, "W = watts — energy spent per second"],
-  [/\bF\b/, "F = farads — how much charge a capacitor can hold"],
-  [/\bH\b/, "H = henries — how hard an inductor fights change"],
-  [/×\/s/, "×/s = times per second"],
-  [/°C/, "°C = degrees Celsius — temperature"],
-  [/\+/, "+ = the positive end — conventional current flows out of here"],
-  [/−/, "− = the negative end — conventional current returns here"],
-];
-function explainSymbols(text: string): string[] {
-  const out: string[] = [];
-  for (const [re, gloss] of SYMBOL_GLOSS) if (re.test(text)) out.push(gloss);
-  return out.length ? out : ["This label shows the part's live reading, straight from the solver."];
-}
-
 type Particle = BoardParticle;
 
 function clamp(v: number, lo: number, hi: number) {
@@ -291,12 +110,15 @@ interface AudioBits {
 }
 
 
+export { LEARN, TOOLBOX } from "./content";
+
 interface CircuitLabProps {
   // the circuit that loads on mount and on "Reset"
   initialBuild?: (cx: number, cy: number) => Circuit;
+  onHelp?: () => void;
 }
 
-export default function CircuitLab({ initialBuild }: CircuitLabProps) {
+export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
   const circuitRef = useRef<Circuit>({ vertices: [], parts: [] });
   const dragRef = useRef<Drag | null>(null);
   const snapHintRef = useRef<string | null>(null);
@@ -324,6 +146,10 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
     sparkGain: null,
   });
   const volumeToastShownRef = useRef(false);
+  const lastVolWarnRef = useRef(0);
+  const momentumRef = useRef({ vx: 0, vy: 0, vaz: 0, vpol: 0 });
+  // where the next zoom-in dives: the last place you clicked on the blue mat
+  const zoomAnchorRef = useRef({ x: BENCH.cx, y: BENCH.cy });
 
   const [, setFrame] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -346,8 +172,6 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
   }, []);
   const [symbolTip, setSymbolTip] = useState<{ x: number; y: number; lines: string[] } | null>(null);
   // readings come from real meters; the amps overlay is an opt-in x-ray
-  const [insideId, setInsideId] = useState<string | null>(null);
-  const lampRef = useRef({ x: BENCH.cx - BENCH.w / 2 - 320, y: BENCH.cy - BENCH.h / 2 + 500 });
   const [showAmps, setShowAmps] = useState(false);
   const [showLabels, setShowLabels] = useState(true);
   const toolModeRef = useRef(toolMode);
@@ -555,13 +379,17 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
       }
     }
 
-    if (anyAudible && soundOnRef.current && !volumeToastShownRef.current) {
+    const nowMs = performance.now();
+    if (
+      anyAudible &&
+      soundOnRef.current &&
+      (ctx.state !== "running" || !volumeToastShownRef.current) &&
+      nowMs - lastVolWarnRef.current > 8000
+    ) {
       volumeToastShownRef.current = true;
-      try {
-        localStorage.setItem("circuit-lab-volume-toast", "1");
-      } catch {}
+      lastVolWarnRef.current = nowMs;
       setVolumeToast(true);
-      window.setTimeout(() => setVolumeToast(false), 7000);
+      window.setTimeout(() => setVolumeToast(false), 4000);
     }
 
     // sparking: a crackle that grows as any part nears its explosion point
@@ -671,7 +499,6 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
 
   useEffect(() => {
     try {
-      if (localStorage.getItem("circuit-lab-volume-toast")) volumeToastShownRef.current = true;
     } catch {}
     const rect = boardDivRef.current?.getBoundingClientRect();
     const cw = rect?.width ?? 1100;
@@ -700,6 +527,24 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
       }
       stepParticles(dt);
       updateAudio();
+      // released drags coast: the camera glides to a stop instead of freezing
+      if (!dragRef.current) {
+        const mom = momentumRef.current;
+        const cam = camRef.current;
+        if (Math.abs(mom.vx) > 0.02 || Math.abs(mom.vy) > 0.02) {
+          cam.tx += mom.vx;
+          cam.ty += mom.vy;
+          clampCam();
+        }
+        if (Math.abs(mom.vaz) > 0.00005 || Math.abs(mom.vpol) > 0.00005) {
+          cam.azim += mom.vaz;
+          cam.polar = clamp(cam.polar + mom.vpol, 0.05, POLAR_MAX);
+        }
+        mom.vx *= 0.9;
+        mom.vy *= 0.9;
+        mom.vaz *= 0.88;
+        mom.vpol *= 0.88;
+      }
       clockRef.current += dt;
       // dangerously hot parts spit real sparks before they let go
       const circHot = circuitRef.current;
@@ -771,10 +616,15 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
 
   const clampCam = useCallback(() => {
     const c = camRef.current;
-    c.dist = clamp(c.dist, 26, 20000);
+    c.polar = clamp(c.polar, 0.05, POLAR_MAX);
+    // the flatter the tilt, the further sideways the camera sits for the same
+    // distance — cap the distance so it can never slip through the walls
+    const sideways = Math.sin(c.polar);
+    const wallRoom = 16000; // room half-size minus target range and a margin
+    c.dist = clamp(c.dist, 26, Math.min(18000, sideways > 0.01 ? wallRoom / sideways : 18000));
+    // the view can only look at the mat — never off into the room
     c.tx = clamp(c.tx, BENCH.cx - BENCH.w / 2, BENCH.cx + BENCH.w / 2);
     c.ty = clamp(c.ty, BENCH.cy - BENCH.h / 2, BENCH.cy + BENCH.h / 2);
-    c.polar = clamp(c.polar, 0.05, 1.2);
   }, []);
 
   useEffect(() => {
@@ -785,13 +635,17 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
       // the microscope: molecules, then the actual electrons.
       e.preventDefault();
       const cam = camRef.current;
-      const under = apiRef.current?.toWorld(e.clientX, e.clientY);
       const f = Math.exp(e.deltaY * 0.0016);
-      cam.dist = clamp(cam.dist * f, 26, 20000);
-      if (under && f < 1) {
-        // zooming in pulls the view toward what you're pointing at
-        cam.tx += (under.x - cam.tx) * (1 - f);
-        cam.ty += (under.y - cam.ty) * (1 - f);
+      cam.dist = clamp(cam.dist * f, 26, 18000);
+      if (f < 1) {
+        // zooming in pulls the view toward the last spot you clicked on the mat
+        const a = zoomAnchorRef.current;
+        cam.tx += (a.x - cam.tx) * (1 - f);
+        cam.ty += (a.y - cam.ty) * (1 - f);
+      } else {
+        // zooming out settles back over the center of the table
+        cam.tx += (BENCH.cx - cam.tx) * (1 - 1 / f);
+        cam.ty += (BENCH.cy - cam.ty) * (1 - 1 / f);
       }
       clampCam();
     };
@@ -825,7 +679,7 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
     const tanV = Math.tan(FOV_RAD / 2);
     cam.tx = (x0 + x1) / 2;
     cam.ty = (y0 + y1) / 2;
-    cam.dist = clamp(Math.max(bh / (2 * tanV), bw / (2 * tanV * aspect)) * 1.12, 200, 60000);
+    cam.dist = clamp(Math.max(bh / (2 * tanV), bw / (2 * tanV * aspect)) * 1.12, 200, 18000);
     clampCam();
   }, [clampCam]);
 
@@ -900,34 +754,79 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
     const circ = circuitRef.current;
     if (drag.kind === "orbit") {
       const cam = camRef.current;
-      cam.azim -= (e.clientX - drag.lastX) * 0.005;
+      const dAz = -(e.clientX - drag.lastX) * 0.005;
+      const dPol = -(e.clientY - drag.lastY) * 0.004;
+      cam.azim += dAz;
       // shift-drag up tilts the camera down toward the horizon, drag down
       // brings it overhead — the direction the user expects
-      cam.polar = clamp(cam.polar - (e.clientY - drag.lastY) * 0.004, 0.05, 1.2);
+      cam.polar = clamp(cam.polar + dPol, 0.05, POLAR_MAX);
       drag.lastX = e.clientX;
       drag.lastY = e.clientY;
+      const mom = momentumRef.current;
+      mom.vaz = mom.vaz * 0.7 + dAz * 0.3;
+      mom.vpol = mom.vpol * 0.7 + dPol * 0.3;
+      clampCam();
       return;
     }
     if (drag.kind === "pan") {
-      // both rays are cast with the SAME camera, so the delta is honest even
-      // while the eased camera is still catching up — no runaway feedback
+      // both rays from the same camera — an honest delta while the camera eases
       const cam = camRef.current;
       const wPrev = toWorld({ clientX: drag.lastX, clientY: drag.lastY });
       const wNow = toWorld(e);
       cam.tx -= wNow.x - wPrev.x;
       cam.ty -= wNow.y - wPrev.y;
-      drag.moved += Math.abs(e.clientX - drag.lastX) + Math.abs(e.clientY - drag.lastY);
+      const mom = momentumRef.current;
+      mom.vx = mom.vx * 0.7 + (wPrev.x - wNow.x) * 0.3;
+      mom.vy = mom.vy * 0.7 + (wPrev.y - wNow.y) * 0.3;
       drag.lastX = e.clientX;
       drag.lastY = e.clientY;
       clampCam();
       return;
     }
-    if (drag.kind === "lamp") {
-      const w = toWorld(e);
-      lampRef.current = {
-        x: clamp(w.x + drag.offX, BENCH.cx - BENCH.w / 2 - 500, BENCH.cx + BENCH.w / 2 + 300),
-        y: clamp(w.y + drag.offY, BENCH.cy - BENCH.h / 2 - 300, BENCH.cy + BENCH.h / 2 + 300),
-      };
+    if (drag.kind === "gizmo") {
+      const wPrev = toWorld({ clientX: drag.lastX, clientY: drag.lastY });
+      const wNow = toWorld(e);
+      const dx = drag.axis === "z" ? 0 : wNow.x - wPrev.x;
+      const dy = drag.axis === "x" ? 0 : wNow.y - wPrev.y;
+      drag.lastX = e.clientX;
+      drag.lastY = e.clientY;
+      const gp = circ.parts.find((pp) => pp.id === drag.partId);
+      if (gp) {
+        const seen = new Set<string>();
+        for (const vid of [gp.a, gp.b]) {
+          if (seen.has(vid)) continue;
+          seen.add(vid);
+          const v = vertexById(circ, vid);
+          if (v) {
+            v.x += dx;
+            v.y += dy;
+          }
+        }
+      }
+      return;
+    }
+    if (drag.kind === "group") {
+      // both rays from the same camera — an honest delta while the camera eases
+      const wPrev = toWorld({ clientX: drag.lastX, clientY: drag.lastY });
+      const wNow = toWorld(e);
+      const gdx = wNow.x - wPrev.x;
+      const gdy = wNow.y - wPrev.y;
+      drag.lastX = e.clientX;
+      drag.lastY = e.clientY;
+      const movedVs = new Set<string>();
+      for (const pid of selectedIdsRef.current) {
+        const gp = circ.parts.find((pp) => pp.id === pid);
+        if (!gp) continue;
+        for (const vid of [gp.a, gp.b]) {
+          if (movedVs.has(vid)) continue;
+          movedVs.add(vid);
+          const v = vertexById(circ, vid);
+          if (v) {
+            v.x += gdx;
+            v.y += gdy;
+          }
+        }
+      }
       return;
     }
     if (drag.kind === "marquee") {
@@ -989,26 +888,10 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
     const drag = dragRef.current;
     dragRef.current = null;
     snapHintRef.current = null;
-    if (!drag || drag.kind === "orbit" || drag.kind === "lamp") return;
-    if (drag.kind === "pan") {
-      if (drag.moved < 5) {
-        const pk = apiRef.current?.pick(drag.downX, drag.downY);
-        const circ2 = circuitRef.current;
-        if (pk?.kind === "part") {
-          const part = circ2.parts.find((p) => p.id === pk.partId);
-          if (part) {
-            setSelectedId(part.id);
-            setSelectedIds([part.id]);
-            if (part.type === "switch" && !part.destroyed) part.closed = !part.closed;
-          }
-        } else if (pk?.kind === "vertex") {
-          setVertexMenu(partsAtVertex(circ2, pk.vertexId).length >= 2 ? pk.vertexId : null);
-        } else {
-          setSelectedId(null);
-          setSelectedIds([]);
-          setVertexMenu(null);
-        }
-      }
+    if (!drag || drag.kind === "orbit" || drag.kind === "pan") return;
+    if (drag.kind === "group" || drag.kind === "gizmo") {
+      clampAll(circuitRef.current);
+      enforceLengths(circuitRef.current, new Set());
       return;
     }
     const circ = circuitRef.current;
@@ -1179,17 +1062,12 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
     [fitView, pushHistory]
   );
 
-  const toggleFullscreen = useCallback(() => {
-    const host = boardDivRef.current;
-    if (!host) return;
-    if (document.fullscreenElement) void document.exitFullscreen();
-    else void host.requestFullscreen();
-  }, []);
 
   // every press on the 3D board lands here: raycast, then route
   const onBoardPointerDown = useCallback(
     (e: React.PointerEvent) => {
       ensureAudio();
+      momentumRef.current = { vx: 0, vy: 0, vaz: 0, vpol: 0 };
       // presses on HTML overlays (inspector, sliders, popovers, trash) are
       // theirs alone — only the 3D canvas talks to the board
       if (!(e.target instanceof HTMLCanvasElement)) return;
@@ -1203,10 +1081,18 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
       if (!pk) return;
       const circ = circuitRef.current;
       setSymbolTip(null);
-      if (pk.kind === "lamp") {
-        const w = apiRef.current?.toWorld(e.clientX, e.clientY);
-        if (w) dragRef.current = { kind: "lamp", offX: lampRef.current.x - w.x, offY: lampRef.current.y - w.y };
-        return;
+      {
+        // remember where on the mat this press landed — zoom dives there next
+        const w = pk.kind === "bg" ? { x: pk.x, y: pk.y } : apiRef.current?.toWorld(e.clientX, e.clientY);
+        if (
+          w &&
+          w.x >= BENCH.cx - BENCH.w / 2 &&
+          w.x <= BENCH.cx + BENCH.w / 2 &&
+          w.y >= BENCH.cy - BENCH.h / 2 &&
+          w.y <= BENCH.cy + BENCH.h / 2
+        ) {
+          zoomAnchorRef.current = { x: w.x, y: w.y };
+        }
       }
       if (pk.kind === "label") {
         const host = boardDivRef.current?.getBoundingClientRect();
@@ -1226,18 +1112,27 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
         }
         return;
       }
-      if (toolModeRef.current === "hand") {
-        // move-view mode: everything drags the view; a plain click still selects
-        dragRef.current = {
-          kind: "pan",
-          lastX: e.clientX,
-          lastY: e.clientY,
-          downX: e.clientX,
-          downY: e.clientY,
-          moved: 0,
-        };
+      if (pk.kind === "gizmo") {
+        const selId = uiRef.current.selectedId;
+        if (selId) {
+          pushHistory();
+          dragRef.current = { kind: "gizmo", axis: pk.axis, partId: selId, lastX: e.clientX, lastY: e.clientY };
+        }
         return;
       }
+      // from far away the bench is a diorama — get close to touch it
+      if ((pk.kind === "vertex" || pk.kind === "part") && camRef.current.dist > 4500) {
+        if (pk.kind === "part") {
+          const part = circ.parts.find((p) => p.id === pk.partId);
+          if (part) {
+            setSelectedId(part.id);
+            setSelectedIds([part.id]);
+          }
+        }
+        showInfo("Zoom in closer to grab parts.");
+        return;
+      }
+      // parts and their end-dots always drag directly, whatever the tool mode
       if (pk.kind === "vertex") {
         const v = vertexById(circ, pk.vertexId);
         if (v) startVertexDrag(v, e);
@@ -1248,11 +1143,49 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
         if (part) startBodyDrag(part, e);
         return;
       }
+      if (toolModeRef.current === "hand") {
+        setSelectedId(null);
+        setSelectedIds([]);
+        setVertexMenu(null);
+        // dragging ON the mat slides the view across it; off the mat it rotates
+        const onMat =
+          pk.kind === "bg" &&
+          pk.x >= BENCH.cx - BENCH.w / 2 &&
+          pk.x <= BENCH.cx + BENCH.w / 2 &&
+          pk.y >= BENCH.cy - BENCH.h / 2 &&
+          pk.y <= BENCH.cy + BENCH.h / 2;
+        dragRef.current = onMat
+          ? { kind: "pan", lastX: e.clientX, lastY: e.clientY }
+          : { kind: "orbit", lastX: e.clientX, lastY: e.clientY };
+        return;
+      }
+      setVertexMenu(null);
+      // grabbing inside the region frame moves the whole selection
+      const many = selectedIdsRef.current;
+      if (many.length > 1 && pk.kind === "bg") {
+        let gx0 = Infinity, gy0 = Infinity, gx1 = -Infinity, gy1 = -Infinity;
+        for (const pid of many) {
+          const gp = circ.parts.find((pp) => pp.id === pid);
+          if (!gp) continue;
+          for (const vid of [gp.a, gp.b]) {
+            const v = vertexById(circ, vid);
+            if (!v) continue;
+            gx0 = Math.min(gx0, v.x);
+            gy0 = Math.min(gy0, v.y);
+            gx1 = Math.max(gx1, v.x);
+            gy1 = Math.max(gy1, v.y);
+          }
+        }
+        const gpad = 55;
+        if (pk.x >= gx0 - gpad && pk.x <= gx1 + gpad && pk.y >= gy0 - gpad && pk.y <= gy1 + gpad) {
+          pushHistory();
+          dragRef.current = { kind: "group", lastX: e.clientX, lastY: e.clientY };
+          return;
+        }
+      }
       setSelectedId(null);
       setSelectedIds([]);
-      setVertexMenu(null);
-      // select mode: dragging empty board sweeps a selection box (no panning);
-      // hand mode pans as usual
+      // select mode: dragging empty board sweeps a region you can then drag around
       const host = boardDivRef.current?.getBoundingClientRect();
       dragRef.current = {
         kind: "marquee",
@@ -1490,16 +1423,6 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
     setVertexMenu(null);
   }, [pushHistory]);
 
-  const resetLesson = useCallback(() => {
-    if (!initialBuild) return;
-    pushHistory();
-    const { w, h } = sizeRef.current;
-    circuitRef.current = initialBuild(w / 2, h / 2);
-    particlesRef.current = [];
-    setSelectedId(null);
-    setVertexMenu(null);
-    fitView();
-  }, [fitView, initialBuild, pushHistory]);
 
   // ——— render ———
 
@@ -1697,7 +1620,6 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
             uiRef={uiRef}
             apiRef={apiRef}
             sizeRef={sizeRef}
-            lampRef={lampRef}
           />
 
           {/* the microscope is its own flat view, drawn over the 3D bench */}
@@ -1802,7 +1724,7 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
 
           {/* microscope explainer */}
           {microPart && microMat && microFade > 0.5 && (
-            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 w-[520px] max-w-[92%] rounded-xl border border-[var(--accent-dim)] bg-[var(--panel)] p-4 text-[13px] leading-relaxed pointer-events-none">
+            <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-30 w-[520px] max-w-[92%] border border-[var(--accent-dim)] bg-[var(--panel)] p-4 text-[13px] leading-relaxed pointer-events-none">
               <div className="font-semibold text-[var(--ink)] mb-1">
                 Inside the {CATALOG[microPart.type].label.toLowerCase()} — zoomed roughly{" "}
                 {electronStage ? "ten million" : "a million"} times. This is {microMat.title}.
@@ -1821,8 +1743,8 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
           )}
 
           {volumeToast && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-4 py-2 text-xs text-[var(--ink)]">
-              Your circuit is making sound — turn your computer volume up to hear it.
+            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 border border-[var(--accent-dim)] bg-[var(--panel)] px-5 py-3 text-sm text-[var(--ink)]">
+              This makes sound — turn your computer volume up to hear it.
             </div>
           )}
 
@@ -1837,7 +1759,7 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
             const sy = clamp((v.y - view.y) * view.scale, 70, vh - 40);
             return (
               <div
-                className="absolute z-20 -translate-x-1/2 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-2 shadow-2xl"
+                className="absolute z-20 -translate-x-1/2 border border-[var(--line)] bg-[var(--panel)] p-2 shadow-2xl"
                 style={{ left: sx, top: sy - 62 }}
               >
                 <div className="text-[11px] text-[var(--ink-3)] px-1 pb-1.5">
@@ -1887,7 +1809,7 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
             const frac = Math.min(1, (performance.now() - d.holdStart) / SOLDER_MS);
             return (
               <div
-                className="absolute z-20 pointer-events-none rounded-full"
+                className="absolute z-20 pointer-events-none "
                 style={{
                   left: pr.x - 17,
                   top: pr.y - 17,
@@ -1904,7 +1826,7 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
           {/* symbol explainer: click any label to decode its letters */}
           {symbolTip && (
             <div
-              className="absolute z-30 max-w-[300px] rounded-lg px-3 py-2 text-[11.5px] leading-relaxed text-[var(--ink)] pointer-events-none"
+              className="absolute z-30 max-w-[300px] px-3 py-2 text-[11.5px] leading-relaxed text-[var(--ink)] pointer-events-none"
               style={{
                 left: Math.min(symbolTip.x, Math.max(60, vw - 310)),
                 top: symbolTip.y + 12,
@@ -1920,7 +1842,7 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
           )}
 
           {infoToast && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 rounded-lg border border-[var(--line)] bg-[var(--panel)] px-4 py-2 text-xs text-[var(--ink)]">
+            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 border border-[var(--line)] bg-[var(--panel)] px-4 py-2 text-xs text-[var(--ink)]">
               {infoToast}
             </div>
           )}
@@ -1950,34 +1872,28 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
             />
           </div>
 
-          {/* recenter */}
-          <button
-            className="absolute top-3 right-21 z-10 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-2 text-[var(--ink-3)] hover:text-[var(--ink)] hover:bg-[var(--panel-2)] transition-colors"
-            title="Recenter on your circuit"
-            aria-label="Recenter on your circuit"
-            onClick={fitView}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <circle cx="8" cy="8" r="3.2" />
-              <path d="M8 1.5v2.6 M8 11.9v2.6 M1.5 8h2.6 M11.9 8h2.6" />
-            </svg>
-          </button>
+          {onHelp && (
+            <button
+              className="absolute top-3 left-3 z-10 h-[34px] border border-[var(--line)] bg-[var(--panel)] px-3 text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--panel-2)] transition-colors text-[13px] font-semibold leading-none"
+              title="How it all works — units, equations, and what each part does"
+              aria-label="Open the guide"
+              onClick={onHelp}
+            >
+              Guide
+            </button>
+          )}
 
-          {/* fullscreen */}
-          <button
-            className="absolute top-3 right-12 z-10 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-2 text-[var(--ink-3)] hover:text-[var(--ink)] hover:bg-[var(--panel-2)] transition-colors"
-            title="Fullscreen"
-            aria-label="Toggle fullscreen"
-            onClick={toggleFullscreen}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <path d="M2 6V2h4 M10 2h4v4 M14 10v4h-4 M6 14H2v-4" />
-            </svg>
-          </button>
+          <OrientationBall
+            camRef={camRef}
+            onGrab={(e) => {
+              momentumRef.current = { vx: 0, vy: 0, vaz: 0, vpol: 0 };
+              dragRef.current = { kind: "orbit", lastX: e.clientX, lastY: e.clientY };
+            }}
+          />
 
           {/* the trash can: clears the whole board */}
           <button
-            className="absolute top-3 right-3 z-10 rounded-lg border border-[var(--line)] bg-[var(--panel)] p-2 text-[var(--ink-3)] hover:text-[var(--ink)] hover:bg-[var(--panel-2)] transition-colors"
+            className="absolute top-3 right-3 z-10 border border-[var(--line)] bg-[var(--panel)] p-2 text-[var(--ink-3)] hover:text-[var(--ink)] hover:bg-[var(--panel-2)] transition-colors"
             title="Clear the whole board"
             aria-label="Clear the whole board"
             onClick={clearBoard}
@@ -1992,65 +1908,14 @@ export default function CircuitLab({ initialBuild }: CircuitLabProps) {
               <div className="text-center text-sm text-[var(--ink-3)] px-8 leading-relaxed">
                 <p className="font-medium text-[var(--ink-2)]">The board is empty.</p>
                 <p>Drag in parts or a big build from the left panel.</p>
-                {initialBuild && (
-                  <button className="btn mt-3 pointer-events-auto" onClick={resetLesson}>
-                    Rebuild this step&apos;s circuit
-                  </button>
-                )}
               </div>
             </div>
           )}
-
-          {/* the see-inside panel: what THIS part is doing, live */}
-          {(() => {
-            if (!insideId) return null;
-            const ip = circ.parts.find((pp) => pp.id === insideId);
-            if (!ip) return null;
-            const mat = microMaterial(ip.type);
-            const def = CATALOG[ip.type];
-            return (
-              <div
-                className="absolute top-3 right-3 bottom-3 z-30 w-80 max-w-[85%] overflow-y-auto rounded-xl border border-[var(--accent-dim)] p-4 text-[12.5px] leading-relaxed"
-                style={{ background: "color-mix(in oklab, var(--panel) 88%, transparent)", backdropFilter: "blur(4px)" }}
-              >
-                <div className="flex items-center mb-2">
-                  <span className="font-semibold text-[var(--ink)]">Inside the {def.label.toLowerCase()}</span>
-                  <div className="flex-1" />
-                  <button className="btn" style={{ border: "none" }} onClick={() => setInsideId(null)} aria-label="Close">
-                    ✕
-                  </button>
-                </div>
-                <div className="rounded-lg bg-[#0b1220] border border-[var(--line)] p-2 mb-3">
-                  <svg width="100%" height="86" viewBox={`-10 -34 ${def.len + 20} 78`} preserveAspectRatio="xMidYMid meet">
-                    <Glyph p={ip} L={def.len} />
-                  </svg>
-                </div>
-                <p className="text-[var(--ink-2)] mb-2">{LEARN[ip.type]}</p>
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-[var(--ink-3)] mb-1">
-                  Zoomed to the atoms — {mat.title}
-                </p>
-                <p className="text-[var(--ink-2)] mb-2">{mat.atoms}</p>
-                <p className="text-[11px] font-semibold uppercase tracking-widest text-[var(--ink-3)] mb-1">
-                  And the electrons
-                </p>
-                <p className="text-[var(--ink-2)] mb-3">{mat.electrons}</p>
-                <p
-                  className="text-[11px] text-[var(--ink-3)] pt-2 border-t border-[var(--line)]"
-                  style={{ fontFamily: "var(--font-mono)" }}
-                >
-                  live right now: {fmtAmps(ip.current)} through it · {fmtVolts(ip.volts)} across it ·{" "}
-                  {Math.round(ip.temp)} °C
-                  {Math.abs(ip.current) < 0.002 ? " · no current — the electrons are just jiggling in place" : ""}
-                </p>
-              </div>
-            );
-          })()}
 
           {selected && (
             <Inspector
               part={selected}
               onDelete={() => deletePart(selected.id)}
-              onInside={() => setInsideId(selected.id)}
               onClose={() => setSelectedId(null)}
               onFlip={() => {
                 const tmp = selected.a;
@@ -2104,473 +1969,5 @@ function ModelPreview({ model }: { model: Model }) {
         );
       })}
     </svg>
-  );
-}
-
-function Inspector({
-  part,
-  onDelete,
-  onInside,
-  onClose,
-  onFlip,
-}: {
-  part: Part;
-  onDelete: () => void;
-  onInside: () => void;
-  onClose: () => void;
-  onFlip: () => void;
-}) {
-  const def = CATALOG[part.type];
-  const set = (fn: (p: Part) => void) => fn(part); // mutate; the frame loop re-renders
-
-  return (
-    <div
-      className="absolute bottom-14 left-1/2 -translate-x-1/2 z-20 w-[300px] max-w-[92%] rounded-xl border border-[var(--line)] p-2.5 text-sm"
-      style={{ background: "color-mix(in oklab, var(--panel) 74%, transparent)", backdropFilter: "blur(3px)" }}
-    >
-      <div className="flex items-center mb-2">
-        <span className="font-semibold text-[var(--ink)]">{def.label}</span>
-        <div className="flex-1" />
-        <button className="btn mr-1" onClick={onInside} title="What's physically inside this part, and what it's doing right now">
-          See inside
-        </button>
-        <button className="btn" style={{ border: "none" }} onClick={onClose} aria-label="Close">
-          ✕
-        </button>
-      </div>
-
-      {part.destroyed ? (
-        <p className="text-[12px] text-[var(--danger)] mb-1">
-          It overheated and blew apart. Nothing left to fix — remove it and build a new one.
-        </p>
-      ) : (
-        <>
-          {part.type === "battery" && (
-            <>
-              <SimSlider
-                label={`Push strength: ${part.voltage} volts`}
-                min={1}
-                max={120}
-                step={1}
-                value={part.voltage}
-                onChange={(v) => set((p) => (p.voltage = v))}
-              />
-              <p className="text-[11px] text-[var(--ink-3)] mt-1 mb-2">
-                A little battery is 9 volts. A wall outlet pushes about 120 volts.
-              </p>
-              <button className="btn" onClick={onFlip}>
-                Swap the + and − ends
-              </button>
-            </>
-          )}
-
-          {(part.type === "resistor" ||
-            part.type === "bulb" ||
-            part.type === "heater" ||
-            part.type === "hairdryer") && (
-            <>
-              <SimSlider
-                label={`Resistance: ${part.resistance} ohms`}
-                min={def.minR ?? 1}
-                max={def.maxR ?? 100}
-                step={1}
-                value={part.resistance}
-                onChange={(v) => set((p) => (p.resistance = v))}
-              />
-              <p className="text-[11px] text-[var(--ink-3)] mt-1">
-                More ohms = harder for current to get through = less current flows.
-              </p>
-            </>
-          )}
-
-          {part.type === "capacitor" && (
-            <>
-              <SimSlider
-                label={`Size: ${part.capacitance} farads`}
-                min={0.01}
-                max={2}
-                step={0.01}
-                value={part.capacitance}
-                onChange={(v) => set((p) => (p.capacitance = v))}
-              />
-              <p className="text-[11px] text-[var(--ink-3)] mt-1 mb-2">
-                Holding {fmtVolts(part.capV)} right now. It pops above 60 volts — be nice to it.
-              </p>
-              <button className="btn" onClick={() => set((p) => (p.capV = 0))}>
-                Dump its stored charge
-              </button>
-            </>
-          )}
-
-          {part.type === "fuse" && (
-            <>
-              <SimSlider
-                label={`Melts above: ${part.maxAmps} amps`}
-                min={1}
-                max={50}
-                step={1}
-                value={part.maxAmps}
-                onChange={(v) => set((p) => (p.maxAmps = v))}
-              />
-              {part.blown && (
-                <button className="btn mt-2" onClick={() => set((p) => (p.blown = false))}>
-                  Put in a new fuse
-                </button>
-              )}
-            </>
-          )}
-
-          {part.type === "switch" && (
-            <button className="btn" onClick={() => set((p) => (p.closed = !p.closed))}>
-              {part.closed ? "Open the switch (stop the current)" : "Close the switch (let current flow)"}
-            </button>
-          )}
-
-          {part.type === "button" && (
-            <>
-              <label className="flex items-center gap-2 text-[12px] text-[var(--ink-2)]">
-                Keyboard letter:
-                <input
-                  className="sim-input w-12 text-center uppercase"
-                  maxLength={1}
-                  value={part.key.toUpperCase()}
-                  onChange={(e) =>
-                    set((p) => (p.key = e.target.value.slice(-1).toLowerCase()))
-                  }
-                />
-              </label>
-              <p className="text-[11px] text-[var(--ink-3)] mt-1.5">
-                Hold that key to let current through — or click and hold the button itself.
-              </p>
-            </>
-          )}
-
-          {part.type === "blinker" && (
-            <SimSlider
-              label={`Speed: ${part.hz} flips per second`}
-              min={0.5}
-              max={8}
-              step={0.1}
-              value={part.hz}
-              onChange={(v) => set((p) => (p.hz = Math.round(v * 10) / 10))}
-            />
-          )}
-
-          {part.type === "inductor" && (
-            <>
-              <SimSlider
-                label={`Size: ${part.henries} henries`}
-                min={0.5}
-                max={10}
-                step={0.5}
-                value={part.henries}
-                onChange={(v) => set((p) => (p.henries = v))}
-              />
-              <p className="text-[11px] text-[var(--ink-3)] mt-1">
-                Bigger = fights harder against the current changing. Watch an ammeter next to it.
-              </p>
-            </>
-          )}
-
-          {(part.type === "coil" || part.type === "relay") && (
-            <>
-              <div className="flex items-center gap-1.5 mb-2">
-                <span className="text-[12px] text-[var(--ink-2)] mr-1">Channel:</span>
-                {[1, 2, 3, 4, 5, 6].map((ch) => (
-                  <button
-                    key={ch}
-                    aria-pressed={part.channel === ch}
-                    onClick={() => set((p) => (p.channel = ch))}
-                    style={{
-                      width: 22,
-                      height: 22,
-                      borderRadius: 999,
-                      fontSize: 11,
-                      fontWeight: 700,
-                      color: part.channel === ch ? "#0b1220" : CHANNEL_COLORS[ch],
-                      background: part.channel === ch ? CHANNEL_COLORS[ch] : "transparent",
-                      border: `2px solid ${CHANNEL_COLORS[ch]}`,
-                      cursor: "pointer",
-                    }}
-                  >
-                    {ch}
-                  </button>
-                ))}
-              </div>
-              {part.type === "coil" ? (
-                <p className="text-[11px] text-[var(--ink-3)]">
-                  Power this coil and every magnetic switch on channel {part.channel} flips.
-                  {Math.abs(part.current) > 0.02 ? " It is magnetized right now." : " Not enough current to magnetize yet."}
-                </p>
-              ) : (
-                <>
-                  <div className="seg mb-2" role="group" aria-label="How the switch reacts to its coil">
-                    <button
-                      aria-pressed={!part.normallyClosed}
-                      onClick={() => set((p) => (p.normallyClosed = false))}
-                    >
-                      Closes when coil is on
-                    </button>
-                    <button
-                      aria-pressed={part.normallyClosed}
-                      onClick={() => set((p) => (p.normallyClosed = true))}
-                    >
-                      Opens when coil is on
-                    </button>
-                  </div>
-                  <p className="text-[11px] text-[var(--ink-3)]">
-                    The &ldquo;opens&rdquo; kind is a NOT — that&apos;s the trick that makes real logic possible.
-                    {part.engaged ? " Letting current through right now." : " Blocking right now."}
-                  </p>
-                </>
-              )}
-            </>
-          )}
-
-          {(part.type === "lightsensor" || part.type === "heatsensor") && (
-            <p className="text-[11px] text-[var(--ink-3)]">
-              {part.type === "lightsensor" ? "Light" : "Warmth"} landing on it:{" "}
-              {Math.round(part.sense * 100)}%. Its resistance right now:{" "}
-              {part.resistance >= 1000 ? `${Math.round(part.resistance / 1000)}k` : Math.round(part.resistance)}{" "}
-              ohms. Move it closer to the {part.type === "lightsensor" ? "light" : "heat"} for a stronger
-              reaction — distance matters a lot.
-            </p>
-          )}
-
-          {part.type === "solar" && (
-            <p className="text-[11px] text-[var(--ink-3)]">
-              Light landing on it: {Math.round(part.sense * 100)}%, so it is pushing{" "}
-              {fmtVolts(part.voltage)} right now. Park it close to a bright bulb.
-            </p>
-          )}
-
-          {part.type === "voicebox" && (
-            <>
-              <label className="block text-[12px] text-[var(--ink-2)]">
-                What it should say:
-                <input
-                  className="sim-input w-full mt-1"
-                  maxLength={48}
-                  value={part.text}
-                  onChange={(e) => set((p) => (p.text = e.target.value))}
-                />
-              </label>
-              <div className="flex items-center gap-2 mt-2">
-                <button
-                  className="btn btn-primary"
-                  disabled={part.playing}
-                  onClick={() =>
-                    set((p) => {
-                      p.playing = true;
-                      p.playPos = 0;
-                    })
-                  }
-                >
-                  {part.playing ? "Speaking…" : "Speak"}
-                </button>
-                <span className="text-[11px] text-[var(--ink-3)]">
-                  {Math.abs(part.current) > 0.02
-                    ? "Powered and ready."
-                    : "No power — it only talks while current flows through it."}
-                </span>
-              </div>
-            </>
-          )}
-
-          {part.type === "calculator" && (
-            <p className="text-[11px] text-[var(--ink-3)]">
-              {def.hint} The panel below it shows every switch inside, live — zoom out (the Fit
-              button) to see the whole thing.
-            </p>
-          )}
-
-          {part.type === "speaker" && (
-            <>
-              <div className="seg mb-2" role="group" aria-label="What the speaker plays">
-                <button aria-pressed={part.mode === "note"} onClick={() => set((p) => (p.mode = "note"))}>
-                  Play one note
-                </button>
-                <button aria-pressed={part.mode === "volts"} onClick={() => set((p) => (p.mode = "volts"))}>
-                  Pitch follows volts
-                </button>
-              </div>
-              {part.mode === "note" ? (
-                <label className="flex items-center gap-2 text-[12px] text-[var(--ink-2)]">
-                  Note:
-                  <select
-                    className="sim-select"
-                    value={part.noteHz}
-                    onChange={(e) => set((p) => (p.noteHz = parseFloat(e.target.value)))}
-                  >
-                    {NOTES.map((n) => (
-                      <option key={n.name} value={n.hz}>
-                        {n.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : (
-                <p className="text-[11px] text-[var(--ink-3)]">
-                  More volts across it = higher pitch. More current = louder.
-                </p>
-              )}
-            </>
-          )}
-
-          {part.type === "led" && (
-            <>
-              <div className="flex items-center gap-1.5 mb-2">
-                <span className="text-[12px] text-[var(--ink-2)] mr-1">Color:</span>
-                {(Object.keys(LED_COLORS) as LedColor[]).map((c) => (
-                  <button
-                    key={c}
-                    aria-label={`Make it ${c}`}
-                    aria-pressed={part.color === c}
-                    onClick={() => set((p) => (p.color = c))}
-                    className="rounded-full"
-                    style={{
-                      width: 20,
-                      height: 20,
-                      background: LED_COLORS[c],
-                      border: part.color === c ? "2px solid var(--ink)" : "2px solid transparent",
-                      cursor: "pointer",
-                    }}
-                  />
-                ))}
-              </div>
-              <p className="text-[11px] text-[var(--ink-3)] mb-2">
-                An LED only lets current through one way, and it eats 2 volts to light up.
-                {part.ledOn ? " It is ON." : " It is dark right now — maybe flip it?"}
-              </p>
-              <button className="btn" onClick={onFlip}>
-                Flip it around
-              </button>
-            </>
-          )}
-
-          {part.type === "diode" && (
-            <>
-              <p className="text-[11px] text-[var(--ink-3)] mb-2">
-                Current can only pass in the direction of the arrow.
-                {part.ledOn ? " It is letting current through." : " It is blocking right now."}
-              </p>
-              <button className="btn" onClick={onFlip}>
-                Flip it around
-              </button>
-            </>
-          )}
-
-          {part.type === "chip" && (
-            <>
-              <label className="block text-[12px] text-[var(--ink-2)] mb-1">
-                Its program (runs top to bottom, forever):
-              </label>
-              <textarea
-                className="sim-input w-full h-28 resize-y"
-                style={{ fontFamily: "var(--font-mono)", fontSize: 11, lineHeight: 1.5 }}
-                value={part.text}
-                spellCheck={false}
-                onChange={(e) => {
-                  part.text = e.target.value;
-                  part.pc = 0;
-                  part.chipWait = 0;
-                  part.chipDrive = 0;
-                }}
-              />
-              <p className="text-[11px] text-[var(--ink-3)] mt-1.5">
-                Commands: <b>turn 3 on</b> / <b>turn 3 off</b> drives magnetic channel 3 (any
-                magnetic switch tuned to it obeys) · <b>wait 0.5</b> pauses half a second ·{" "}
-                <b>if 2 is on</b> … <b>end</b> reads a channel (wire a button + coil to make an
-                input). Lines it doesn&apos;t understand are skipped.
-              </p>
-              <p className="text-[11px] mt-1" style={{ fontFamily: "var(--font-mono)" }}>
-                {Math.abs(part.current) > 0.01 ? (
-                  <span className="text-[var(--accent)]">
-                    running · driving{" "}
-                    {[1, 2, 3, 4, 5, 6].filter((ch) => part.chipDrive & (1 << ch)).join(", ") || "nothing"}
-                  </span>
-                ) : (
-                  <span className="text-[var(--ink-3)]">no power — the program is stopped</span>
-                )}
-              </p>
-            </>
-          )}
-
-          {part.type === "motor" && (
-            <>
-              <div className="seg mb-2" role="group" aria-label="What is bolted onto the motor">
-                {(["fan", "wheel", "propeller", "winch"] as MotorAttachment[]).map((att) => (
-                  <button
-                    key={att}
-                    aria-pressed={part.attachment === att}
-                    onClick={() => set((p) => (p.attachment = att))}
-                  >
-                    {att === "fan" ? "Fan" : att === "wheel" ? "Wheel" : att === "propeller" ? "Prop" : "Winch"}
-                  </button>
-                ))}
-              </div>
-              <p className="text-[11px] text-[var(--ink-3)]">
-                {part.attachment === "winch"
-                  ? `The winch winds a rope. Crate is ${Math.round(part.lift * 100)}% of the way up. Reverse the current to lower it.`
-                  : "More current = faster spinning. Reverse the current and it spins the other way."}
-              </p>
-            </>
-          )}
-
-          {(part.type === "coin" ||
-            part.type === "hand" ||
-            part.type === "eraser" ||
-            part.type === "ammeter" ||
-            part.type === "voltmeter" ||
-            part.type === "outlet" ||
-            part.type === "buzzer" ||
-            part.type === "wire") && <p className="text-[11px] text-[var(--ink-3)]">{def.hint}</p>}
-        </>
-      )}
-
-      <div
-        className="mt-3 pt-2 border-t border-[var(--line)] flex items-center text-[11px] text-[var(--ink-3)] gap-3"
-        style={{ fontFamily: "var(--font-mono)" }}
-      >
-        <span>through it: {fmtAmps(part.current)}</span>
-        <span>across it: {fmtVolts(part.volts)}</span>
-        <span className={part.temp > 60 ? "text-orange-400" : ""}>{Math.round(part.temp)} °C</span>
-      </div>
-
-      <button className="btn btn-danger mt-2 w-full justify-center" onClick={onDelete}>
-        Remove this part (or press Delete)
-      </button>
-    </div>
-  );
-}
-
-function SimSlider({
-  label,
-  min,
-  max,
-  step,
-  value,
-  onChange,
-}: {
-  label: string;
-  min: number;
-  max: number;
-  step: number;
-  value: number;
-  onChange: (v: number) => void;
-}) {
-  return (
-    <label className="block">
-      <span className="text-xs text-[var(--ink-2)]">{label}</span>
-      <input
-        type="range"
-        className="sim-slider mt-1"
-        min={min}
-        max={max}
-        step={step}
-        value={value}
-        onChange={(e) => onChange(parseFloat(e.target.value))}
-      />
-    </label>
   );
 }

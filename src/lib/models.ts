@@ -145,56 +145,17 @@ export const MODELS: Model[] = [
     },
   },
   {
-    id: "chiplab",
-    title: "Programmable brain rig",
-    blurb: "A microchip blinking a bulb through magnetic channel 1, with a button input on channel 2. Click the chip to edit its program.",
+    id: "tally",
+    title: "Tally counter",
+    blurb: "Press the button: the memory box adds one and keeps it — even after the power stops.",
     build: (cx, cy) => {
-      return rails(cx, cy, [-100, 130, 360], -140, 140, -330, 9, (i, top, bot, V, P) => {
-        if (i === 0) {
-          const m = V(top.x, top.y + 100);
-          const c = V(top.x, top.y + 210);
-          P("switch", top, m, { closed: true });
-          P("chip", m, c, { text: "turn 1 on\nwait 0.5\nturn 1 off\nwait 0.5" });
-          P("wire", c, bot);
-        } else if (i === 1) {
-          const m = V(top.x, top.y + 100);
-          const c = V(top.x, top.y + 195);
-          P("relay", top, m, { channel: 1 });
-          P("bulb", m, c);
-          P("wire", c, bot);
-        } else {
-          const m = V(top.x, top.y + 100);
-          const c = V(top.x, top.y + 200);
-          P("button", top, m, { key: "a" });
-          P("coil", m, c, { channel: 2 });
-          P("wire", c, bot);
-        }
+      return rails(cx, cy, [120], -140, 140, -140, 9, (_i, top, bot, V, P) => {
+        const m = V(top.x, top.y + 100);
+        const c = V(top.x, top.y + 210);
+        P("button", top, m, { key: "a" });
+        P("memory", m, c);
+        P("wire", c, bot);
       });
-    },
-  },
-  {
-    id: "pocketcalc",
-    title: "Pocket calculator",
-    blurb: "Add, subtract, multiply, divide — with every internal switch shown live below it.",
-    build: (cx, cy) => {
-      const { circ, V, P } = fragment();
-      const a = V(cx - 260, cy - 100);
-      const m = V(cx - 160, cy - 100);
-      const c2 = V(cx + 20, cy - 100);
-      const b = V(cx + 260, cy - 100);
-      const c = V(cx + 260, cy + 110);
-      const b1 = V(cx + 55, cy + 110);
-      const b2 = V(cx - 55, cy + 110);
-      const d = V(cx - 260, cy + 110);
-      P("switch", a, m, { closed: true });
-      P("calculator", m, c2);
-      P("wire", c2, b);
-      P("wire", b, c);
-      P("wire", c, b1);
-      P("battery", b1, b2, { voltage: 9 });
-      P("wire", b2, d);
-      P("wire", d, a);
-      return circ;
     },
   },
   {

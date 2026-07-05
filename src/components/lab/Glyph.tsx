@@ -25,6 +25,7 @@ export const BODY_W: Record<PartType, number> = {
   voicebox: 64,
   calculator: 150,
   chip: 70,
+  memory: 60,
   usbc: 56,
   coil: 56,
   relay: 56,
@@ -525,6 +526,27 @@ export function Glyph({ p, L, angle = 0 }: { p: Part; L: number; angle?: number 
             <rect key={dx} x={cx + dx - 2} y={-14} width={4} height={28} fill="#d9dee6" opacity={0.5} />
           ))}
           <circle cx={cx + 27} cy={-10} r={2.5} fill={Math.abs(p.current) > 0.01 ? "#4ade80" : "#134e4a"} />
+        </>
+      );
+
+    case "memory":
+      return (
+        <>
+          {leads}
+          <rect x={cx - 28} y={-16} width={56} height={32} rx={5} fill="#4c3f8f" stroke="#241d47" strokeWidth={1.5} />
+          <rect x={cx - 20} y={-10} width={40} height={20} rx={3} fill="#101726" />
+          <text
+            x={cx}
+            y={1}
+            textAnchor="middle"
+            dominantBaseline="middle"
+            fontSize={15}
+            fontWeight={700}
+            fill="#7ce7ff"
+            fontFamily="var(--font-mono, monospace)"
+          >
+            {Math.round(p.mem)}
+          </text>
         </>
       );
 

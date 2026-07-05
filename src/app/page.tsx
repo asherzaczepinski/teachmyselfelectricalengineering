@@ -1,5 +1,5 @@
-import Welcome from "../components/Welcome";
+import Playground from "../components/Playground";
 
 export default function HomePage() {
-  return <Welcome />;
+  return <Playground />;
 }

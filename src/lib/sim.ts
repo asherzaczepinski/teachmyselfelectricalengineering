@@ -24,6 +24,7 @@ export type PartType =
   | "calculator"
   | "chip"
   | "usbc"
+  | "memory"
   | "motor"
   | "coil"
   | "relay"
@@ -493,6 +494,17 @@ export const CATALOG: Record<PartType, PartDef> = {
     heatMass: 40,
     explodeAt: 380,
   },
+  memory: {
+    label: "Memory",
+    hint: "Stores one number and shows it. Each fresh pulse of current adds one — and it remembers with the power off.",
+    len: 110,
+    rigid: true,
+    category: "Logic & sensors",
+    resistance: 0.5,
+    heatK: 1,
+    heatMass: 50,
+    explodeAt: 380,
+  },
   voltmeter: {
     label: "Voltmeter",
     hint: "Connect its two ends ACROSS a part. Reads the voltage between them.",
@@ -606,6 +618,8 @@ export interface Part {
   calcAcc: number; // calculator: the number waiting on the left of the operator
   calcOp: string; // calculator: pending operator ("+", "−", "×", "÷" or "")
   calcFresh: boolean; // calculator: next digit starts a new number
+  mem: number; // memory cell: the number it is holding
+  memOn: boolean; // memory cell: currently feeling current (so one pulse counts once)
   blown: boolean; // fuse melted
   destroyed: boolean; // part exploded — permanently an open circuit
   ledOn: boolean; // shared by LED and diode ("is it conducting")
@@ -671,6 +685,8 @@ export function blankPart(type: PartType): Omit<Part, "id" | "a" | "b"> {
     calcAcc: 0,
     calcOp: "",
     calcFresh: true,
+    mem: 0,
+    memOn: false,
     blown: false,
     destroyed: false,
     ledOn: false,
@@ -954,6 +970,18 @@ export function stepCircuit(circ: Circuit, dt: number): StepEvents {
       if (p.playPos >= Math.max(p.text.length, 1) * LETTER_SECONDS) {
         p.playing = false;
         p.playPos = 0;
+      }
+    }
+
+    if (p.type === "memory" && !p.destroyed) {
+      // count once per pulse: latch on a strong rising current, release only
+      // when it clearly stops (hysteresis, so a wobbly press can't double-count)
+      const amps = Math.abs(p.current);
+      if (!p.memOn && amps > 0.02) {
+        p.memOn = true;
+        p.mem += 1;
+      } else if (p.memOn && amps < 0.008) {
+        p.memOn = false;
       }
     }
 

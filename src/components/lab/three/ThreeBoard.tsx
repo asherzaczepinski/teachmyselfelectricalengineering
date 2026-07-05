@@ -41,7 +41,7 @@ export type Pick =
   | { kind: "handle" }
   | { kind: "calckey"; partId: string; key: string }
   | { kind: "label"; text: string }
-  | { kind: "lamp" }
+  | { kind: "gizmo"; axis: "x" | "z" | "xy" }
   | { kind: "bg"; x: number; y: number };
 
 export interface BoardApi {
@@ -68,7 +68,6 @@ interface Props {
   uiRef: MutableRefObject<UIState>;
   apiRef: MutableRefObject<BoardApi | null>;
   sizeRef: MutableRefObject<{ w: number; h: number }>;
-  lampRef: MutableRefObject<{ x: number; y: number }>;
 }
 
 const FOV = 40;
@@ -143,7 +142,7 @@ function labelFor(p: Part, showAmps: boolean, showLabels: boolean): { text: stri
   return { text, color: amps && !base ? "#facc15" : "#b7c1d4" };
 }
 
-export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, apiRef, sizeRef, lampRef }: Props) {
+export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, apiRef, sizeRef }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -166,9 +165,9 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
     const camera = new THREE.PerspectiveCamera(FOV, 1, 5, 200000);
 
     // lights — a bright workshop, so nothing hides in shadow
-    scene.add(new THREE.AmbientLight(0xd8e2f2, 0.5));
-    const key = new THREE.DirectionalLight(0xfff2df, 0.35);
-    key.castShadow = false;
+    scene.add(new THREE.AmbientLight(0xd8e2f2, 1.0));
+    const key = new THREE.DirectionalLight(0xfff2df, 0.95);
+    key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);
     key.shadow.camera.near = 100;
     key.shadow.camera.far = 3000;
@@ -206,80 +205,165 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
       leg.position.set(BENCH.cx + sx * legX, -BENCH.cy + sy * legY, -48.2 - 35 - 750);
       scene.add(leg);
     }
+    // ——— the garage: concrete slab, corrugated walls, shop lights, shelving ———
+    const FLOOR_Z = -48.2 - 35 - 1500;
+    const ROOM = 20000; // half-width of the room — a proper workshop hall
+    const WALL_H = 27000000; // functionally infinite — the roof does not exist for you
+    const concreteTexture = () => {
+      const c = document.createElement("canvas");
+      c.width = c.height = 512;
+      const g = c.getContext("2d")!;
+      g.fillStyle = "#4a4a4e";
+      g.fillRect(0, 0, 512, 512);
+      for (let i = 0; i < 2600; i++) {
+        g.fillStyle = `rgba(${Math.random() > 0.5 ? "255,255,255" : "0,0,0"},${0.02 + Math.random() * 0.05})`;
+        g.fillRect(Math.random() * 512, Math.random() * 512, 1 + Math.random() * 3, 1 + Math.random() * 3);
+      }
+      g.strokeStyle = "rgba(20,20,22,0.55)"; // expansion joints
+      g.lineWidth = 3;
+      g.strokeRect(0, 0, 512, 512);
+      const t = new THREE.CanvasTexture(c);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.repeat.set(8, 8);
+      t.anisotropy = 8;
+      return t;
+    };
     const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(60000, 60000),
-      new THREE.MeshStandardMaterial({ color: 0x27242c, roughness: 0.95 })
+      new THREE.PlaneGeometry(ROOM * 2, ROOM * 2),
+      new THREE.MeshStandardMaterial({ map: concreteTexture(), color: 0x9a9aa0, roughness: 0.95 })
     );
-    floor.position.z = -48.2 - 35 - 1500;
+    floor.position.z = FLOOR_Z;
     floor.receiveShadow = true;
     scene.add(floor);
 
-    // the desk lamp: THE light source, and you can drag it around the bench
-    const lampGroup = new THREE.Group();
-    scene.add(lampGroup);
-    const lampM = new THREE.MeshStandardMaterial({ color: 0x2c343f, roughness: 0.4, metalness: 0.7 });
-    const lampBase = new THREE.Mesh(new THREE.CylinderGeometry(150, 170, 40, 24).rotateX(Math.PI / 2), lampM);
-    lampBase.position.set(0, 0, 20 - 13);
-    lampBase.castShadow = true;
-    lampBase.userData.lamp = true;
-    lampGroup.add(lampBase);
-    const arm1 = new THREE.Mesh(new THREE.CylinderGeometry(22, 22, 900, 12).rotateX(Math.PI / 2), lampM);
-    arm1.position.set(120, 100, 440);
-    arm1.rotation.y = 0.35;
-    arm1.rotation.x = -0.15;
-    arm1.userData.lamp = true;
-    lampGroup.add(arm1);
-    const joint = new THREE.Mesh(new THREE.SphereGeometry(36, 16, 12), lampM);
-    joint.position.set(270, 170, 850);
-    joint.userData.lamp = true;
-    lampGroup.add(joint);
-    const arm2 = new THREE.Mesh(new THREE.CylinderGeometry(20, 20, 820, 12).rotateX(Math.PI / 2), lampM);
-    arm2.position.set(620, 330, 960);
-    arm2.rotation.y = -1.05;
-    arm2.rotation.x = 0.32;
-    arm2.userData.lamp = true;
-    lampGroup.add(arm2);
-    const head = new THREE.Mesh(
-      new THREE.CylinderGeometry(70, 210, 260, 24, 1, true).rotateX(Math.PI / 2),
-      new THREE.MeshStandardMaterial({ color: 0x2c343f, roughness: 0.4, metalness: 0.7, side: THREE.DoubleSide })
+    // the roof: you are always inside this building
+    const ceiling = new THREE.Mesh(
+      new THREE.PlaneGeometry(ROOM * 2, ROOM * 2),
+      new THREE.MeshStandardMaterial({ color: 0x3b3f46, roughness: 0.9, side: THREE.DoubleSide })
     );
-    head.position.set(980, 480, 1020);
-    head.rotation.x = 0.4;
-    head.rotation.y = -0.35;
-    head.userData.lamp = true;
-    lampGroup.add(head);
-    const bulbBall = new THREE.Mesh(
-      new THREE.SphereGeometry(58, 18, 12),
-      new THREE.MeshStandardMaterial({ color: 0xfff6dd, emissive: 0xffe9b0, emissiveIntensity: 2.2 })
-    );
-    bulbBall.position.set(1020, 520, 950);
-    bulbBall.userData.lamp = true;
-    lampGroup.add(bulbBall);
-    const lampGlow2 = new THREE.Sprite(
-      new THREE.SpriteMaterial({ map: glowTexture(), color: 0xffedbb, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.75 })
-    );
-    lampGlow2.scale.setScalar(380);
-    lampGlow2.position.copy(bulbBall.position);
-    lampGroup.add(lampGlow2);
-    const deskSpot = new THREE.SpotLight(0xffe9c0, 6.5, 0, 1.2, 0.5, 0.35);
-    deskSpot.position.copy(bulbBall.position);
-    deskSpot.castShadow = true;
-    deskSpot.shadow.mapSize.set(2048, 2048);
-    deskSpot.shadow.bias = -0.0004;
-    deskSpot.target.position.set(1020, 520, 0); // straight down from the bulb
-    lampGroup.add(deskSpot, deskSpot.target);
+    ceiling.position.z = FLOOR_Z + WALL_H;
+    scene.add(ceiling);
 
-    // the maker's mark carved into the table edge
-    {
-      const decTex = textTexture("engineerwithasher.com", "#4a3520", 64);
-      const img = decTex.image as HTMLCanvasElement;
-      const dec = new THREE.Mesh(
-        new THREE.PlaneGeometry(1400, (1400 * img.height) / img.width),
-        new THREE.MeshBasicMaterial({ map: decTex, transparent: true, opacity: 0.85 })
-      );
-      dec.position.set(BENCH.cx, -(BENCH.cy + BENCH.h / 2 + 240), -12.8);
-      scene.add(dec);
+    const corrugatedTexture = () => {
+      const c = document.createElement("canvas");
+      c.width = 256;
+      c.height = 64;
+      const g = c.getContext("2d")!;
+      for (let x = 0; x < 256; x++) {
+        const v = 0.5 + 0.5 * Math.sin((x / 16) * Math.PI * 2);
+        const b = 52 + v * 26;
+        g.fillStyle = `rgb(${b},${b + 3},${b + 8})`;
+        g.fillRect(x, 0, 1, 64);
+      }
+      const t = new THREE.CanvasTexture(c);
+      t.wrapS = t.wrapT = THREE.RepeatWrapping;
+      t.repeat.set(26, 1);
+      return t;
+    };
+    const wallMat = new THREE.MeshStandardMaterial({
+      map: corrugatedTexture(),
+      color: 0xb9c2cc,
+      roughness: 0.7,
+      metalness: 0.35,
+      side: THREE.DoubleSide,
+    });
+    const mkWall = (x: number, y: number, rotZ: number) => {
+      const wall = new THREE.Mesh(new THREE.PlaneGeometry(ROOM * 2, WALL_H), wallMat);
+      wall.position.set(x, y, FLOOR_Z + WALL_H / 2);
+      wall.rotation.x = Math.PI / 2;
+      wall.rotation.y = rotZ;
+      scene.add(wall);
+    };
+    mkWall(0, ROOM, 0); // back wall
+    mkWall(0, -ROOM, Math.PI); // front wall
+    mkWall(-ROOM, 0, Math.PI / 2); // left
+    mkWall(ROOM, 0, -Math.PI / 2); // right
+
+    // steel I-beam columns
+    const beamMat = new THREE.MeshStandardMaterial({ color: 0x3c434c, roughness: 0.5, metalness: 0.6 });
+    for (const [bx, by] of [
+      [-ROOM + 200, ROOM - 200],
+      [ROOM - 200, ROOM - 200],
+      [-ROOM + 200, -ROOM + 200],
+      [ROOM - 200, -ROOM + 200],
+      [0, ROOM - 200],
+      [-ROOM + 200, 0],
+      [ROOM - 200, 0],
+    ]) {
+      const col = new THREE.Mesh(new THREE.BoxGeometry(260, 260, WALL_H), beamMat);
+      col.position.set(bx, by, FLOOR_Z + WALL_H / 2);
+      scene.add(col);
     }
+
+    // a roll-up garage door on the back wall
+    {
+      const door = new THREE.Mesh(
+        new THREE.PlaneGeometry(5200, 4400),
+        new THREE.MeshStandardMaterial({ color: 0x7d8894, roughness: 0.55, metalness: 0.45 })
+      );
+      door.position.set(3400, ROOM - 30, FLOOR_Z + 2200);
+      door.rotation.x = Math.PI / 2;
+      door.rotation.y = Math.PI;
+      scene.add(door);
+      const slatM = new THREE.MeshStandardMaterial({ color: 0x5d6874, roughness: 0.6 });
+      for (let i = 1; i < 10; i++) {
+        const slat = new THREE.Mesh(new THREE.BoxGeometry(5200, 26, 30), slatM);
+        slat.position.set(3400, ROOM - 45, FLOOR_Z + i * 440);
+        scene.add(slat);
+      }
+    }
+
+    // metal shelving rack with cardboard boxes along the back wall
+    {
+      const rackM = new THREE.MeshStandardMaterial({ color: 0x2f6db3, roughness: 0.5, metalness: 0.4 });
+      const shelfM = new THREE.MeshStandardMaterial({ color: 0x8d939c, roughness: 0.6, metalness: 0.5 });
+      const rackX = -4200,
+        rackY = ROOM - 700;
+      for (const dx of [-2200, 2200]) {
+        for (const dy of [-330, 330]) {
+          const post = new THREE.Mesh(new THREE.BoxGeometry(120, 120, 4600), rackM);
+          post.position.set(rackX + dx, rackY + dy, FLOOR_Z + 2300);
+          scene.add(post);
+        }
+      }
+      for (let lvl = 0; lvl < 4; lvl++) {
+        const shelf = new THREE.Mesh(new THREE.BoxGeometry(4560, 800, 60), shelfM);
+        shelf.position.set(rackX, rackY, FLOOR_Z + 300 + lvl * 1350);
+        scene.add(shelf);
+      }
+    }
+
+
+    // desk chair pulled up to the front of the bench
+    {
+      const chairX = 600,
+        chairY = 3400;
+      const cushionM = new THREE.MeshStandardMaterial({ color: 0x27313d, roughness: 0.85 });
+      const chromeM = new THREE.MeshStandardMaterial({ color: 0x5a636e, roughness: 0.35, metalness: 0.8 });
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(950, 950, 110), cushionM);
+      seat.position.set(chairX, -chairY, FLOOR_Z + 820);
+      seat.castShadow = true;
+      scene.add(seat);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(900, 110, 1050), cushionM);
+      back.position.set(chairX, -chairY - 480, FLOOR_Z + 1450);
+      back.rotation.x = -0.12;
+      back.castShadow = true;
+      scene.add(back);
+      const post = new THREE.Mesh(new THREE.CylinderGeometry(60, 60, 760, 12).rotateX(Math.PI / 2), chromeM);
+      post.position.set(chairX, -chairY, FLOOR_Z + 400);
+      scene.add(post);
+      for (let i = 0; i < 5; i++) {
+        const a = (i / 5) * Math.PI * 2;
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(620, 90, 60), chromeM);
+        leg.position.set(chairX + Math.cos(a) * 310, -chairY + Math.sin(a) * 310, FLOOR_Z + 60);
+        leg.rotation.z = a;
+        scene.add(leg);
+        const caster = new THREE.Mesh(new THREE.SphereGeometry(70, 10, 8), new THREE.MeshStandardMaterial({ color: 0x1c1f24, roughness: 0.5 }));
+        caster.position.set(chairX + Math.cos(a) * 590, -chairY + Math.sin(a) * 590, FLOOR_Z + 60);
+        scene.add(caster);
+      }
+    }
+
 
 
     // dynamic collections
@@ -334,7 +418,89 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
     // selection rings (a pool — marquee can select many parts), snap ring
     const ringGeo = new THREE.RingGeometry(0.86, 1, 40);
     const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
-    const ringPool: THREE.Mesh[] = [];
+    // desk dressing on the wood margins: books, a ruler, a pen cup
+    {
+      // ruler on the front strip
+      const ruler = new THREE.Mesh(
+        new THREE.BoxGeometry(900, 92, 8),
+        new THREE.MeshStandardMaterial({ color: 0xd8c26a, roughness: 0.6 })
+      );
+      ruler.position.set(500, 1740, -13.2 + 4);
+      ruler.rotation.z = -0.06;
+      ruler.castShadow = true;
+      scene.add(ruler);
+      for (let i = 0; i < 9; i++) {
+        const tick = new THREE.Mesh(
+          new THREE.BoxGeometry(4, i % 2 ? 26 : 40, 1.6),
+          new THREE.MeshStandardMaterial({ color: 0x4a3a1c, roughness: 0.8 })
+        );
+        tick.position.set(500 - 400 + i * 100, 1740 + 24, -13.2 + 8.5);
+        tick.rotation.z = -0.06;
+        scene.add(tick);
+      }
+      // pen cup near the lamp, pencils poking out at lazy angles
+      const cup = new THREE.Mesh(
+        new THREE.CylinderGeometry(95, 85, 210, 20, 1, true).rotateX(Math.PI / 2),
+        new THREE.MeshStandardMaterial({ color: 0x30363f, roughness: 0.5, metalness: 0.4, side: THREE.DoubleSide })
+      );
+      cup.position.set(2400, 1760, -13.2 + 105);
+      cup.castShadow = true;
+      scene.add(cup);
+      const penCols = [0xf2c230, 0x3f6dd8, 0xd84a3f, 0x3aa065];
+      penCols.forEach((c, i) => {
+        const pen = new THREE.Mesh(
+          new THREE.CylinderGeometry(13, 13, 320, 8).rotateX(Math.PI / 2),
+          new THREE.MeshStandardMaterial({ color: c, roughness: 0.55 })
+        );
+        const a = (i / penCols.length) * Math.PI * 2;
+        pen.position.set(2400 + Math.cos(a) * 40, 1760 + Math.sin(a) * 40, -13.2 + 220);
+        pen.rotation.x = Math.cos(a) * 0.22;
+        pen.rotation.y = Math.sin(a) * 0.22;
+        scene.add(pen);
+      });
+    }
+
+    // Unity-style move gizmo: red arrow = X, blue arrow = the other bench axis,
+    // yellow pad = free move. Drawn on top of everything, shown on the selected part.
+    const gizmo = new THREE.Group();
+    const mkArrow = (color: number, axis: "x" | "z") => {
+      const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95 });
+      const grp = new THREE.Group();
+      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 90, 10), mat);
+      shaft.position.y = 68;
+      const head = new THREE.Mesh(new THREE.ConeGeometry(17, 42, 14), mat);
+      head.position.y = 134;
+      shaft.userData.gizmo = axis;
+      head.userData.gizmo = axis;
+      shaft.renderOrder = 999;
+      head.renderOrder = 999;
+      grp.add(shaft, head);
+      return grp;
+    };
+    const gizX = mkArrow(0xe4483c, "x");
+    gizX.rotation.z = -Math.PI / 2; // +X
+    const gizZ = mkArrow(0x3a7bd5, "z");
+    gizZ.rotation.z = Math.PI; // world +y (toward the front of the bench)
+    const gizPadMat = new THREE.MeshBasicMaterial({ color: 0xf2c230, depthTest: false, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+    const gizPad = new THREE.Mesh(new THREE.PlaneGeometry(36, 36), gizPadMat);
+    gizPad.userData.gizmo = "xy";
+    gizPad.renderOrder = 999;
+    gizmo.add(gizX, gizZ, gizPad);
+    gizmo.position.z = 26;
+    gizmo.visible = false;
+    scene.add(gizmo);
+
+    // one SQUARE frame around a marquee region (no circles — the user hates circles)
+    const regionFrame = new THREE.Group();
+    const frameMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.85 });
+    const frameEdges: THREE.Mesh[] = [];
+    for (let i = 0; i < 4; i++) {
+      const m = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), frameMat);
+      frameEdges.push(m);
+      regionFrame.add(m);
+    }
+    regionFrame.visible = false;
+    scene.add(regionFrame);
     const selRing = new THREE.Mesh(ringGeo, ringMat);
     selRing.visible = false;
     selRing.position.z = 1.2;
@@ -379,10 +545,10 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
       for (const h of hits) {
         let o: THREE.Object3D | null = h.object;
         while (o) {
+          if (o.userData.gizmo) return { kind: "gizmo", axis: o.userData.gizmo };
           if (o.userData.calcKey && o.userData.partIdKey) {
             return { kind: "calckey", partId: o.userData.partIdKey, key: o.userData.calcKey.key };
           }
-          if (o.userData.lamp) return { kind: "lamp" };
           if (o.userData.labelText) return { kind: "label", text: o.userData.labelText };
           if (o.userData.vertexId) return { kind: "vertex", vertexId: o.userData.vertexId };
           if (o.userData.partId) return { kind: "part", partId: o.userData.partId };
@@ -442,7 +608,6 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
       camera.up.set(0, 0, 1);
       camera.lookAt(t3);
       key.position.set(cur.tx + 260, -cur.ty + 200, 640);
-      lampGroup.position.set(lampRef.current.x, -lampRef.current.y, 0);
       key.target.position.copy(t3);
       const shadowSpan = Math.min(1600, cur.dist * 1.4 + 200);
       const sc = key.shadow.camera as THREE.OrthographicCamera;
@@ -622,28 +787,53 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
       }
 
       // ——— selection / snap / handle ———
-      const selIds = ui.selectedIds.length ? ui.selectedIds : ui.selectedId ? [ui.selectedId] : [];
-      let ringI = 0;
+      // the move gizmo rides on the selected part
+      const gizPart = ui.selectedId ? circ.parts.find((pp) => pp.id === ui.selectedId) : null;
+      if (gizPart && !gizPart.destroyed) {
+        const ga = vmap.get(gizPart.a);
+        const gb = vmap.get(gizPart.b);
+        if (ga && gb) {
+          gizmo.visible = true;
+          gizmo.position.set((ga.x + gb.x) / 2, -(ga.y + gb.y) / 2, 26);
+          gizmo.scale.setScalar(Math.min(4, Math.max(0.7, cur.dist / 950)));
+        } else {
+          gizmo.visible = false;
+        }
+      } else {
+        gizmo.visible = false;
+      }
+
+      // one square frame around the marquee REGION — a plain click draws nothing
+      const selIds = ui.selectedIds.length > 1 ? ui.selectedIds : [];
+      let bx0 = Infinity, by0 = Infinity, bx1 = -Infinity, by1 = -Infinity;
       for (const sid of selIds) {
         const sel = circ.parts.find((pp) => pp.id === sid);
         if (!sel) continue;
         const va = vmap.get(sel.a);
         const vb = vmap.get(sel.b);
         if (!va || !vb) continue;
-        let ring = ringPool[ringI];
-        if (!ring) {
-          ring = new THREE.Mesh(ringGeo, ringMat);
-          ring.position.z = 0.9;
-          scene.add(ring);
-          ringPool.push(ring);
-        }
-        const L = Math.max(20, Math.hypot(vb.x - va.x, vb.y - va.y));
-        ring.visible = true;
-        ring.scale.setScalar(L / 2 + 26);
-        ring.position.set((va.x + vb.x) / 2, -(va.y + vb.y) / 2, 0.9);
-        ringI++;
+        bx0 = Math.min(bx0, va.x, vb.x);
+        by0 = Math.min(by0, va.y, vb.y);
+        bx1 = Math.max(bx1, va.x, vb.x);
+        by1 = Math.max(by1, va.y, vb.y);
       }
-      for (let i = ringI; i < ringPool.length; i++) ringPool[i].visible = false;
+      if (isFinite(bx0)) {
+        const fpad = 55, ft = 6;
+        const fw = bx1 - bx0 + fpad * 2;
+        const fh = by1 - by0 + fpad * 2;
+        regionFrame.visible = true;
+        regionFrame.position.set((bx0 + bx1) / 2, -(by0 + by1) / 2, 1.0);
+        frameEdges[0].position.set(0, fh / 2, 0);
+        frameEdges[0].scale.set(fw + ft, ft, 3);
+        frameEdges[1].position.set(0, -fh / 2, 0);
+        frameEdges[1].scale.set(fw + ft, ft, 3);
+        frameEdges[2].position.set(-fw / 2, 0, 0);
+        frameEdges[2].scale.set(ft, fh + ft, 3);
+        frameEdges[3].position.set(fw / 2, 0, 0);
+        frameEdges[3].scale.set(ft, fh + ft, 3);
+      } else {
+        regionFrame.visible = false;
+      }
       selRing.visible = false;
       const snapV = ui.snapHintId ? vmap.get(ui.snapHintId) : null;
       snapRing.visible = !!snapV;
