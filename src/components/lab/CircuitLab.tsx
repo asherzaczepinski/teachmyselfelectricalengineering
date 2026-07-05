@@ -162,6 +162,10 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
   const selectedIdsRef = useRef(selectedIds);
   selectedIdsRef.current = selectedIds;
   const [infoToast, setInfoToast] = useState<string | null>(null);
+  // while the window is being resized, cover the canvas with the last good
+  // frame + a spinner instead of letting the user watch it stutter
+  const [resizeSnap, setResizeSnap] = useState<string | null>(null);
+  const resizeTimerRef = useRef<number | null>(null);
   const infoTimerRef = useRef<number | null>(null);
   const showInfo = useCallback((text: string) => {
     setInfoToast(text);
@@ -592,6 +596,16 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [playBoom, spawnExplosion, stepParticles, updateAudio]);
 
+  useEffect(() => {
+    const onResize = () => {
+      setResizeSnap((cur) => cur ?? apiRef.current?.snapshot() ?? "");
+      if (resizeTimerRef.current) window.clearTimeout(resizeTimerRef.current);
+      resizeTimerRef.current = window.setTimeout(() => setResizeSnap(null), 380);
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
   // track canvas size
   useEffect(() => {
     const host = boardDivRef.current;
@@ -636,14 +650,15 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
       const f = Math.exp(e.deltaY * 0.0016);
       cam.dist = clamp(cam.dist * f, 26, 18000);
       if (f < 1) {
-        // zooming in dives toward the cursor — snapped to the nearest point
-        // on the mat if the cursor is off in the room somewhere
+        // zooming in leans gently toward the cursor (clamped onto the mat) —
+        // a soft pull, not a lurch, so it never feels like it grabs the view
         const under = apiRef.current?.toWorld(e.clientX, e.clientY);
         if (under) {
           const ax = clamp(under.x, BENCH.cx - BENCH.w / 2, BENCH.cx + BENCH.w / 2);
           const ay = clamp(under.y, BENCH.cy - BENCH.h / 2, BENCH.cy + BENCH.h / 2);
-          cam.tx += (ax - cam.tx) * (1 - f);
-          cam.ty += (ay - cam.ty) * (1 - f);
+          const pull = 0.55 * (1 - f);
+          cam.tx += (ax - cam.tx) * pull;
+          cam.ty += (ay - cam.ty) * pull;
         }
       } else {
         // zooming out settles back over the center of the table
@@ -1872,6 +1887,22 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
             >
               Guide
             </button>
+          )}
+
+          {resizeSnap !== null && (
+            <div className="absolute inset-0 z-40 bg-[var(--bg)]">
+              {resizeSnap && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={resizeSnap} alt="" className="w-full h-full object-cover" draggable={false} />
+              )}
+              <div className="absolute inset-0 flex items-center justify-center">
+                <div
+                  className="animate-spin"
+                  style={{ width: 30, height: 30, border: "3px solid var(--accent)", borderTopColor: "transparent" }}
+                  aria-label="Resizing"
+                />
+              </div>
+            </div>
           )}
 
           <OrientationBall

@@ -48,6 +48,7 @@ export interface BoardApi {
   pick: (clientX: number, clientY: number) => Pick;
   toWorld: (clientX: number, clientY: number) => { x: number; y: number };
   project: (x: number, y: number) => { x: number; y: number };
+  snapshot: () => string; // the last rendered frame, as a data URL
 }
 
 export interface UIState {
@@ -147,7 +148,7 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
 
   useEffect(() => {
     const host = hostRef.current!;
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    const renderer = new THREE.WebGLRenderer({ antialias: true, preserveDrawingBuffer: true });
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -565,7 +566,7 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
       return { x: ((v.x + 1) / 2) * r.width, y: ((1 - v.y) / 2) * r.height };
     };
 
-    apiRef.current = { pick, toWorld, project };
+    apiRef.current = { pick, toWorld, project, snapshot: () => renderer.domElement.toDataURL("image/jpeg", 0.72) };
 
     const ro = new ResizeObserver(() => {
       const r = host.getBoundingClientRect();
