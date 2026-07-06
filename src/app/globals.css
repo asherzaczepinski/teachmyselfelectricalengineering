@@ -227,3 +227,24 @@ input.sim-input {
 .toast-fade {
   animation: toastfade 4.5s ease-in-out forwards;
 }
+
+/* the parts shelf just appears — a quick slide-in, no layout shift */
+@keyframes shelfappear {
+  from { opacity: 0; transform: translateX(-10px); }
+  to { opacity: 1; transform: none; }
+}
+.shelf-appear {
+  animation: shelfappear 0.16s ease-out;
+}
+
+/* the control panel slides out from the right edge */
+@keyframes panelappear {
+  from { opacity: 0; transform: translateX(10px); }
+  to { opacity: 1; transform: none; }
+}
+.panel-appear {
+  animation: panelappear 0.16s ease-out;
+}
+@media (prefers-reduced-motion: reduce) {
+  .shelf-appear, .panel-appear { animation: none; }
+}

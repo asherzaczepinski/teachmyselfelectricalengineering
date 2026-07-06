@@ -32,17 +32,12 @@ function starter(cx: number, cy: number): Circuit {
   P("wire", br, tr);
   P("bulb", tl, tr);
   P("wire", tl, bl);
-  // the PC's power lead: a black cable out of the tower ending in a bare
-  // joint — solder your Arduino to it for five steady volts
-  const pcA = V(cx - 780, cy - 1150);
-  const pcB = V(cx - 780, cy - 700);
-  P("usbc", pcA, pcB);
+  // (the PC is gone from the desk — no power lead either)
   return circ;
 }
 
 // the parts worth reading about, in the order you're likely to meet them
 const PART_TOUR: PartType[] = [
-  "breadboard",
   "battery",
   "wire",
   "switch",

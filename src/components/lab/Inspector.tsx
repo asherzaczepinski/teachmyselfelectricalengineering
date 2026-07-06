@@ -21,7 +21,7 @@ export function Inspector({
 
   return (
     <div
-      className="absolute top-16 right-3 z-20 w-[300px] max-w-[46%] max-h-[70%] overflow-y-auto border border-[var(--line)] p-2.5 text-sm"
+      className="absolute top-16 right-44 z-20 w-[300px] max-w-[46%] max-h-[70%] overflow-y-auto border border-[var(--line)] p-2.5 text-sm"
       style={{ background: "color-mix(in oklab, var(--panel) 74%, transparent)", backdropFilter: "blur(3px)" }}
     >
       <div className="flex items-center mb-2">
@@ -40,16 +40,9 @@ export function Inspector({
         <>
           {part.type === "battery" && (
             <>
-              <SimSlider
-                label={`Push strength: ${part.voltage} volts`}
-                min={1}
-                max={120}
-                step={1}
-                value={part.voltage}
-                onChange={(v) => set((p) => (p.voltage = v))}
-              />
-              <p className="text-[11px] text-[var(--ink-3)] mt-1 mb-2">
-                A little battery is 9 volts. Crank it to 120 and it pushes like household mains.
+              <p className="text-[12px] text-[var(--ink-2)] mb-2">
+                Pushes with <b>{part.voltage} volts</b>. Want a harder or softer push? Grab a different
+                battery from the POWER drawer.
               </p>
               <button className="btn" onClick={onFlip}>
                 Swap the + and − ends
@@ -57,8 +50,14 @@ export function Inspector({
             </>
           )}
 
-          {(part.type === "resistor" ||
-            part.type === "pot" ||
+          {part.type === "resistor" && (
+            <p className="text-[12px] text-[var(--ink-2)] mb-1">
+              This one resists with <b>{part.resistance} ohms</b>. Need more or less? The RESISTORS drawer
+              has other sizes. More ohms = harder for current to get through = less current flows.
+            </p>
+          )}
+
+          {(part.type === "pot" ||
             part.type === "bulb" ||
             part.type === "heater" ||
             part.type === "hairdryer") && (

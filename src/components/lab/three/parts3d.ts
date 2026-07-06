@@ -495,12 +495,14 @@ export function buildPart(p: Part, L: number): PartHandle {
       const ropeGeo = new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(), new THREE.Vector3()]);
       const rope = new THREE.Line(ropeGeo, ropeMat);
       g.add(crate, rope);
+      // the fan gets its own material so the blades can glow with current
+      const fanMat = new THREE.MeshStandardMaterial({ color: 0x4fc3f7, roughness: 0.5, emissive: 0x38bdf8, emissiveIntensity: 0 });
       const rebuildAtt = (kind: string) => {
         att.clear();
         builtAtt = kind;
         if (kind === "fan")
           for (const a of [0, 120, 240]) {
-            const b = boxAt(18, 6, 1.6, M.blue, 11, 0, 0);
+            const b = boxAt(18, 6, 1.6, fanMat, 11, 0, 0);
             const holder = new THREE.Group();
             holder.rotation.z = (a * Math.PI) / 180;
             holder.add(b);
@@ -533,6 +535,8 @@ export function buildPart(p: Part, L: number): PartHandle {
       update = (p2, L2) => {
         if (p2.attachment !== builtAtt) rebuildAtt(p2.attachment);
         rotor.rotation.z = (-p2.spin * Math.PI) / 180;
+        // the light-up fan: blades brighten as more current spins them
+        fanMat.emissiveIntensity = p2.destroyed ? 0 : Math.min(1.8, Math.abs(p2.current) * 7);
         const isWinch = p2.attachment === "winch";
         crate.visible = isWinch;
         rope.visible = isWinch;

@@ -2,41 +2,98 @@
 // plain-language part descriptions (LEARN), the whats-it-made-of stories for
 // the microscope (microMaterial), and the click-a-symbol glossary.
 
-import { PartType } from "../../lib/sim";
+import { MotorAttachment, PartType } from "../../lib/sim";
 
-export const TOOLBOX: { title: string; items: PartType[] }[] = [
+// The parts cabinet: each drawer holds one family, and every item inside is a
+// ready-made pick with its value baked in — want a different resistance or a
+// harder push, grab a different part from the drawer (no sliders).
+export interface DrawerItem {
+  type: PartType;
+  name?: string; // defaults to the catalog label
+  preset?: { resistance?: number; voltage?: number; capacitance?: number; maxAmps?: number; attachment?: MotorAttachment };
+}
+
+export const DRAWERS: { key: string; title: string; items: DrawerItem[] }[] = [
   {
-    title: "Build",
+    key: "power",
+    title: "Power",
     items: [
-      "breadboard",
-      "wire",
-      "battery",
-      "switch",
-      "resistor",
-      "bulb",
-      "led",
-      "diode",
-      "segment",
-      "capacitor",
-      "inductor",
-      "fuse",
-      "ptc",
-      "zener",
-      "neon",
-      "heater",
-      "motor",
-      "pot",
-      "rgbled",
-      "servo",
+      { type: "battery", name: "Little battery — 1.5 volts", preset: { voltage: 1.5 } },
+      { type: "battery", name: "9-volt battery", preset: { voltage: 9 } },
+      { type: "battery", name: "Wall-strength battery — 120 volts", preset: { voltage: 120 } },
+      { type: "solar" },
     ],
   },
-  { title: "Inputs & sound", items: ["button", "blinker", "speaker", "buzzer", "voicebox", "tiltswitch"] },
-  { title: "Measure", items: ["ammeter", "voltmeter"] },
+  { key: "wire", title: "Wire", items: [{ type: "wire" }] },
   {
-    title: "Logic & sensors",
-    items: ["coil", "relay", "lightsensor", "heatsensor", "solar", "ultrasonic", "pir", "soundsensor", "chip"],
+    key: "resistors",
+    title: "Resistors",
+    items: [
+      { type: "resistor", name: "10 ohm resistor", preset: { resistance: 10 } },
+      { type: "resistor", name: "100 ohm resistor", preset: { resistance: 100 } },
+      { type: "resistor", name: "1,000 ohm resistor", preset: { resistance: 1000 } },
+      { type: "resistor", name: "10,000 ohm resistor", preset: { resistance: 10000 } },
+    ],
   },
+  {
+    key: "lights",
+    title: "Lights",
+    items: [
+      { type: "bulb" },
+      { type: "led" },
+      { type: "rgbled" },
+      { type: "neon" },
+      { type: "segment" },
+      { type: "motor", name: "Light-up fan", preset: { attachment: "fan" } },
+    ],
+  },
+  {
+    key: "switches",
+    title: "Switches",
+    items: [{ type: "switch" }, { type: "button" }, { type: "tiltswitch" }, { type: "blinker" }],
+  },
+  {
+    key: "protect",
+    title: "Protection",
+    items: [
+      { type: "fuse", name: "Thin fuse — melts at 1 amp", preset: { maxAmps: 1 } },
+      { type: "fuse", name: "Fat fuse — melts at 10 amps", preset: { maxAmps: 10 } },
+      { type: "ptc" },
+      { type: "diode" },
+      { type: "zener" },
+    ],
+  },
+  {
+    key: "store",
+    title: "Storage",
+    items: [
+      { type: "capacitor", name: "Small capacitor — 0.1 farad", preset: { capacitance: 0.1 } },
+      { type: "capacitor", name: "Big capacitor — 1 farad", preset: { capacitance: 1 } },
+      { type: "inductor" },
+    ],
+  },
+  // (no motion drawer — the fan lives with the lights)
+  { key: "sound", title: "Sound", items: [{ type: "speaker" }, { type: "buzzer" }, { type: "voicebox" }] },
+  { key: "measure", title: "Meters", items: [{ type: "ammeter" }, { type: "voltmeter" }] },
+  {
+    key: "sense",
+    title: "Sensors",
+    items: [
+      { type: "lightsensor" },
+      { type: "heatsensor" },
+      { type: "ultrasonic" },
+      { type: "pir" },
+      { type: "soundsensor" },
+    ],
+  },
+  { key: "logic", title: "Logic", items: [{ type: "coil" }, { type: "relay" }, { type: "chip" }] },
 ];
+
+// the old flat shelf shape, kept for anything still importing TOOLBOX
+export const TOOLBOX: { title: string; items: PartType[] }[] = DRAWERS.map((d) => ({
+  title: d.title,
+  items: [...new Set(d.items.map((i) => i.type))],
+}));
 
 // deeper explanations shown in learning mode when you hover a part
 export const LEARN: Record<PartType, string> = {
