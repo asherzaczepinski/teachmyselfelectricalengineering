@@ -2,7 +2,16 @@
 
 import { useState } from "react";
 import CircuitLab, { LEARN } from "./lab/CircuitLab";
-import { blankPart, CATALOG, Circuit, PartType, uid } from "../lib/sim";
+import { microMaterial } from "./lab/content";
+import { Glyph } from "./lab/Glyph";
+import { blankPart, CATALOG, Circuit, Part, PartType, uid } from "../lib/sim";
+
+// a conducting preview of each part for the rulebook cards
+function tourPart(type: PartType): Part {
+  const part: Part = { id: `tour-${type}`, a: "_a", b: "_b", ...blankPart(type) };
+  part.closed = true;
+  return part;
+}
 
 // the simplest possible circuit: a battery, a bulb, two wires. No switch.
 function starter(cx: number, cy: number): Circuit {
@@ -28,6 +37,7 @@ function starter(cx: number, cy: number): Circuit {
 
 // the parts worth reading about, in the order you're likely to meet them
 const PART_TOUR: PartType[] = [
+  "breadboard",
   "battery",
   "wire",
   "switch",
@@ -35,6 +45,9 @@ const PART_TOUR: PartType[] = [
   "resistor",
   "led",
   "fuse",
+  "ptc",
+  "zener",
+  "neon",
   "capacitor",
   "inductor",
   "motor",
@@ -43,7 +56,13 @@ const PART_TOUR: PartType[] = [
   "lightsensor",
   "heatsensor",
   "solar",
-  "memory",
+  "pot",
+  "rgbled",
+  "tiltswitch",
+  "servo",
+  "ultrasonic",
+  "pir",
+  "soundsensor",
 ];
 
 const UNITS = [
@@ -158,12 +177,31 @@ export default function Playground() {
               <h2 className="text-2xl font-semibold tracking-tight mb-2">How the parts think</h2>
               <p className="text-[var(--ink-2)] mb-6">The logic of each part on the shelf, in plain words.</p>
               <div className="grid gap-4 sm:grid-cols-2">
-                {PART_TOUR.map((t) => (
-                  <div key={t} className="border border-[var(--line)] bg-[var(--panel)] p-4">
-                    <h3 className="font-semibold mb-1.5">{CATALOG[t].label}</h3>
-                    <p className="text-[13.5px] leading-relaxed text-[var(--ink-2)]">{LEARN[t]}</p>
-                  </div>
-                ))}
+                {PART_TOUR.map((t) => {
+                  const def = CATALOG[t];
+                  const inside = microMaterial(t);
+                  return (
+                    <div key={t} className="border border-[var(--line)] bg-[var(--panel)] p-4">
+                      <div className="bg-[#0b1220] border border-[var(--line)] px-2 py-1 mb-2.5">
+                        <svg
+                          width="100%"
+                          height="46"
+                          viewBox={`-10 -26 ${def.len + 20} 52`}
+                          preserveAspectRatio="xMidYMid meet"
+                          aria-hidden
+                        >
+                          <Glyph p={tourPart(t)} L={def.len} />
+                        </svg>
+                      </div>
+                      <h3 className="font-semibold mb-1.5">{def.label}</h3>
+                      <p className="text-[13.5px] leading-relaxed text-[var(--ink-2)] mb-2">{LEARN[t]}</p>
+                      <p className="text-[11px] font-semibold uppercase tracking-widest text-[var(--ink-3)] mb-1">
+                        What it&apos;s made of — {inside.title}
+                      </p>
+                      <p className="text-[12.5px] leading-relaxed text-[var(--ink-3)]">{inside.atoms}</p>
+                    </div>
+                  );
+                })}
               </div>
             </section>
           </div>

@@ -26,6 +26,17 @@ export const BODY_W: Record<PartType, number> = {
   calculator: 150,
   chip: 70,
   memory: 60,
+  pot: 60,
+  breadboard: 240,
+  zener: 38,
+  neon: 40,
+  ptc: 36,
+  rgbled: 38,
+  tiltswitch: 56,
+  servo: 56,
+  ultrasonic: 64,
+  pir: 44,
+  soundsensor: 44,
   usbc: 56,
   coil: 56,
   relay: 56,
@@ -547,6 +558,123 @@ export function Glyph({ p, L, angle = 0 }: { p: Part; L: number; angle?: number 
           >
             {Math.round(p.mem)}
           </text>
+        </>
+      );
+
+    case "zener":
+      return (
+        <>
+          {leads}
+          <polygon points={`${cx - 9},-9 ${cx - 9},9 ${cx + 7},0`} fill={hot ?? "#f2c230"} />
+          <path d={`M ${cx + 7} -9 v18 M ${cx + 7} -9 h-5 M ${cx + 7} 9 h5`} stroke="#c8cfda" strokeWidth={2.4} fill="none" />
+        </>
+      );
+
+    case "neon":
+      return (
+        <>
+          {leads}
+          <circle cx={cx} cy={0} r={11} fill="#2a1a0a" stroke="#a8a29e" strokeWidth={1.5} />
+          <path d={`M ${cx - 4} -5 v10 M ${cx + 4} -5 v10`} stroke="#fb923c" strokeWidth={2.4} />
+        </>
+      );
+
+    case "ptc":
+      return (
+        <>
+          {leads}
+          <circle cx={cx} cy={0} r={11} fill="#f2c230" stroke="#a16207" strokeWidth={2} />
+          <text x={cx} y={1} textAnchor="middle" dominantBaseline="middle" fontSize={9} fontWeight={700} fill="#5b3f10">
+            PTC
+          </text>
+        </>
+      );
+
+    case "breadboard":
+      return (
+        <>
+          {leads}
+          <rect x={cx - 110} y={-18} width={220} height={36} fill="#dcd9cf" stroke="#a8a29e" strokeWidth={1.5} />
+          {[-90, -60, -30, 0, 30, 60, 90].map((dx) => (
+            <g key={dx}>
+              <circle cx={cx + dx} cy={-8} r={2} fill="#2e2e33" />
+              <circle cx={cx + dx} cy={2} r={2} fill="#2e2e33" />
+              <circle cx={cx + dx} cy={12} r={2} fill="#2e2e33" />
+            </g>
+          ))}
+        </>
+      );
+
+    case "pot":
+      return (
+        <>
+          {leads}
+          <path d={zigzag(pad, bodyW, 9)} fill="none" stroke={hot ?? "#f59e0b"} strokeWidth={3.5} strokeLinejoin="round" />
+          <circle cx={cx} cy={-14} r={7} fill="#3a4150" stroke="#5c6676" strokeWidth={1.5} />
+          <line x1={cx} y1={-14} x2={cx + 5} y2={-19} stroke="#c8cfda" strokeWidth={2} />
+        </>
+      );
+
+    case "rgbled":
+      return (
+        <>
+          {leads}
+          <circle cx={cx} cy={0} r={11} fill="url(#rgbfan)" opacity={0.9} />
+          <defs>
+            <linearGradient id="rgbfan" x1="0" y1="0" x2="1" y2="1">
+              <stop offset="0%" stopColor="#e4483c" />
+              <stop offset="50%" stopColor="#3aa065" />
+              <stop offset="100%" stopColor="#3a7bd5" />
+            </linearGradient>
+          </defs>
+        </>
+      );
+
+    case "tiltswitch":
+      return (
+        <>
+          {leads}
+          <rect x={cx - 26} y={-9} width={52} height={18} rx={0} fill="#3a4150" stroke="#5c6676" strokeWidth={1.5} />
+          <circle cx={cx - 12} cy={0} r={6} fill="#c8cfda" />
+        </>
+      );
+
+    case "servo":
+      return (
+        <>
+          {leads}
+          <rect x={cx - 26} y={-12} width={52} height={24} fill="#2458c6" opacity={0.85} />
+          <circle cx={cx + 10} cy={0} r={6} fill="#e8e2d2" />
+          <rect x={cx + 8} y={-20} width={4} height={20} fill="#e8e2d2" />
+        </>
+      );
+
+    case "ultrasonic":
+      return (
+        <>
+          {leads}
+          <rect x={cx - 30} y={-12} width={60} height={24} fill="#2458c6" opacity={0.85} />
+          <circle cx={cx - 13} cy={0} r={8} fill="#c8cfda" stroke="#16181d" strokeWidth={2} />
+          <circle cx={cx + 13} cy={0} r={8} fill="#c8cfda" stroke="#16181d" strokeWidth={2} />
+        </>
+      );
+
+    case "pir":
+      return (
+        <>
+          {leads}
+          <rect x={cx - 20} y={-8} width={40} height={16} fill="#2458c6" opacity={0.85} />
+          <circle cx={cx} cy={-4} r={10} fill="#e8e2d2" opacity={0.9} />
+        </>
+      );
+
+    case "soundsensor":
+      return (
+        <>
+          {leads}
+          <rect x={cx - 20} y={-8} width={40} height={16} fill="#2458c6" opacity={0.85} />
+          <circle cx={cx + 8} cy={0} r={6} fill="#16181d" />
+          <path d={`M ${cx - 14} -3 v6 M ${cx - 10} -5 v10 M ${cx - 6} -2 v4`} stroke="#c8cfda" strokeWidth={1.6} />
         </>
       );
 

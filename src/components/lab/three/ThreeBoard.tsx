@@ -11,7 +11,7 @@ import { RoomEnvironment } from "three/examples/jsm/environments/RoomEnvironment
 import { CATALOG, Circuit, Part, Vertex } from "../../../lib/sim";
 import { shortA, shortV } from "../../../lib/fmt";
 import { BODY_W } from "../Glyph";
-import { buildPart, glowTexture, PartHandle, textTexture } from "./parts3d";
+import { buildPart, glowTexture, PartHandle, textPlane, textTexture } from "./parts3d";
 
 export interface CamState {
   tx: number; // camera target on the board, world coords
@@ -41,7 +41,7 @@ export type Pick =
   | { kind: "handle" }
   | { kind: "calckey"; partId: string; key: string }
   | { kind: "label"; text: string }
-  | { kind: "gizmo"; axis: "x" | "z" | "xy" }
+  | { kind: "action"; action: "guide" | "laptop" }
   | { kind: "bg"; x: number; y: number };
 
 export interface BoardApi {
@@ -314,55 +314,41 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
       }
     }
 
-    // metal shelving rack with cardboard boxes along the back wall
-    {
-      const rackM = new THREE.MeshStandardMaterial({ color: 0x2f6db3, roughness: 0.5, metalness: 0.4 });
-      const shelfM = new THREE.MeshStandardMaterial({ color: 0x8d939c, roughness: 0.6, metalness: 0.5 });
-      const rackX = -4200,
-        rackY = ROOM - 700;
-      for (const dx of [-2200, 2200]) {
-        for (const dy of [-330, 330]) {
-          const post = new THREE.Mesh(new THREE.BoxGeometry(120, 120, 4600), rackM);
-          post.position.set(rackX + dx, rackY + dy, FLOOR_Z + 2300);
-          scene.add(post);
-        }
-      }
-      for (let lvl = 0; lvl < 4; lvl++) {
-        const shelf = new THREE.Mesh(new THREE.BoxGeometry(4560, 800, 60), shelfM);
-        shelf.position.set(rackX, rackY, FLOOR_Z + 300 + lvl * 1350);
-        scene.add(shelf);
-      }
-    }
-
-
     // desk chair pulled up to the front of the bench
     {
       const chairX = 600,
         chairY = 3400;
       const cushionM = new THREE.MeshStandardMaterial({ color: 0x27313d, roughness: 0.85 });
       const chromeM = new THREE.MeshStandardMaterial({ color: 0x5a636e, roughness: 0.35, metalness: 0.8 });
+      const chairParts: THREE.Mesh[] = [];
       const seat = new THREE.Mesh(new THREE.BoxGeometry(950, 950, 110), cushionM);
       seat.position.set(chairX, -chairY, FLOOR_Z + 820);
       seat.castShadow = true;
+      chairParts.push(seat);
       scene.add(seat);
       const back = new THREE.Mesh(new THREE.BoxGeometry(900, 110, 1050), cushionM);
       back.position.set(chairX, -chairY - 480, FLOOR_Z + 1450);
       back.rotation.x = -0.12;
       back.castShadow = true;
+      chairParts.push(back);
       scene.add(back);
       const post = new THREE.Mesh(new THREE.CylinderGeometry(60, 60, 760, 12).rotateX(Math.PI / 2), chromeM);
       post.position.set(chairX, -chairY, FLOOR_Z + 400);
+      chairParts.push(post);
       scene.add(post);
       for (let i = 0; i < 5; i++) {
         const a = (i / 5) * Math.PI * 2;
         const leg = new THREE.Mesh(new THREE.BoxGeometry(620, 90, 60), chromeM);
+        chairParts.push(leg);
         leg.position.set(chairX + Math.cos(a) * 310, -chairY + Math.sin(a) * 310, FLOOR_Z + 60);
         leg.rotation.z = a;
         scene.add(leg);
         const caster = new THREE.Mesh(new THREE.SphereGeometry(70, 10, 8), new THREE.MeshStandardMaterial({ color: 0x1c1f24, roughness: 0.5 }));
         caster.position.set(chairX + Math.cos(a) * 590, -chairY + Math.sin(a) * 590, FLOOR_Z + 60);
+        chairParts.push(caster);
         scene.add(caster);
       }
+      void chairParts;
     }
 
 
@@ -382,12 +368,14 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
     const dotMat = new THREE.MeshStandardMaterial({ color: 0xffd83d, emissive: 0xffd83d, emissiveIntensity: 1.4 });
     const dots = new THREE.InstancedMesh(dotGeo, dotMat, 3000);
     dots.count = 0;
+    dots.frustumCulled = false;
     scene.add(dots);
 
     // explosion shards
     const shardMat = new THREE.MeshStandardMaterial({ color: 0x57534e });
     const shards = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), shardMat, 600);
     shards.count = 0;
+    shards.frustumCulled = false;
     scene.add(shards);
     const sparkMat = new THREE.SpriteMaterial({
       map: glowTexture(),
@@ -419,77 +407,120 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
     // selection rings (a pool — marquee can select many parts), snap ring
     const ringGeo = new THREE.RingGeometry(0.86, 1, 40);
     const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
-    // desk dressing on the wood margins: books, a ruler, a pen cup
+
+
+    // the guide: a green hardback at the mat's front-left corner — click it
     {
-      // ruler on the front strip
-      const ruler = new THREE.Mesh(
-        new THREE.BoxGeometry(900, 92, 8),
-        new THREE.MeshStandardMaterial({ color: 0xd8c26a, roughness: 0.6 })
+      const book = new THREE.Group();
+      book.position.set(BENCH.cx - BENCH.w / 2 + 620, -(BENCH.cy + BENCH.h / 2 - 560), 0);
+      book.rotation.z = -0.12;
+      const coverM = new THREE.MeshStandardMaterial({ color: 0x2f6b46, roughness: 0.55 });
+      const backCover = new THREE.Mesh(new THREE.BoxGeometry(560, 420, 16), coverM);
+      backCover.position.z = 8;
+      const pages = new THREE.Mesh(
+        new THREE.BoxGeometry(524, 392, 64),
+        new THREE.MeshStandardMaterial({ color: 0xe9e3d3, roughness: 0.95 })
       );
-      ruler.position.set(500, 1740, -13.2 + 4);
-      ruler.rotation.z = -0.06;
-      ruler.castShadow = true;
-      scene.add(ruler);
-      for (let i = 0; i < 9; i++) {
-        const tick = new THREE.Mesh(
-          new THREE.BoxGeometry(4, i % 2 ? 26 : 40, 1.6),
-          new THREE.MeshStandardMaterial({ color: 0x4a3a1c, roughness: 0.8 })
-        );
-        tick.position.set(500 - 400 + i * 100, 1740 + 24, -13.2 + 8.5);
-        tick.rotation.z = -0.06;
-        scene.add(tick);
-      }
-      // pen cup near the lamp, pencils poking out at lazy angles
-      const cup = new THREE.Mesh(
-        new THREE.CylinderGeometry(95, 85, 210, 20, 1, true).rotateX(Math.PI / 2),
-        new THREE.MeshStandardMaterial({ color: 0x30363f, roughness: 0.5, metalness: 0.4, side: THREE.DoubleSide })
+      pages.position.set(14, 0, 48);
+      const frontCover = new THREE.Mesh(new THREE.BoxGeometry(560, 420, 16), coverM);
+      frontCover.position.z = 88;
+      frontCover.castShadow = true;
+      const spine = new THREE.Mesh(
+        new THREE.CylinderGeometry(48, 48, 420, 12, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).rotateY(Math.PI / 2),
+        coverM
       );
-      cup.position.set(2400, 1760, -13.2 + 105);
-      cup.castShadow = true;
-      scene.add(cup);
-      const penCols = [0xf2c230, 0x3f6dd8, 0xd84a3f, 0x3aa065];
-      penCols.forEach((c, i) => {
-        const pen = new THREE.Mesh(
-          new THREE.CylinderGeometry(13, 13, 320, 8).rotateX(Math.PI / 2),
-          new THREE.MeshStandardMaterial({ color: c, roughness: 0.55 })
-        );
-        const a = (i / penCols.length) * Math.PI * 2;
-        pen.position.set(2400 + Math.cos(a) * 40, 1760 + Math.sin(a) * 40, -13.2 + 220);
-        pen.rotation.x = Math.cos(a) * 0.22;
-        pen.rotation.y = Math.sin(a) * 0.22;
-        scene.add(pen);
-      });
+      spine.position.set(-280, 0, 48);
+      const title = textPlane("GUIDE", "#e9d9a8", 96);
+      title.position.set(20, 0, 97);
+      book.add(backCover, pages, frontCover, spine, title);
+      book.traverse((o) => (o.userData.uiAction = "guide"));
+      scene.add(book);
     }
 
-    // Unity-style move gizmo: red arrow = X, blue arrow = the other bench axis,
-    // yellow pad = free move. Drawn on top of everything, shown on the selected part.
-    const gizmo = new THREE.Group();
-    const mkArrow = (color: number, axis: "x" | "z") => {
-      const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95 });
-      const grp = new THREE.Group();
-      const shaft = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 90, 10), mat);
-      shaft.position.y = 68;
-      const head = new THREE.Mesh(new THREE.ConeGeometry(17, 42, 14), mat);
-      head.position.y = 134;
-      shaft.userData.gizmo = axis;
-      head.userData.gizmo = axis;
-      shaft.renderOrder = 999;
-      head.renderOrder = 999;
-      grp.add(shaft, head);
-      return grp;
-    };
-    const gizX = mkArrow(0xe4483c, "x");
-    gizX.rotation.z = -Math.PI / 2; // +X
-    const gizZ = mkArrow(0x3a7bd5, "z");
-    gizZ.rotation.z = Math.PI; // world +y (toward the front of the bench)
-    const gizPadMat = new THREE.MeshBasicMaterial({ color: 0xf2c230, depthTest: false, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
-    const gizPad = new THREE.Mesh(new THREE.PlaneGeometry(36, 36), gizPadMat);
-    gizPad.userData.gizmo = "xy";
-    gizPad.renderOrder = 999;
-    gizmo.add(gizX, gizZ, gizPad);
-    gizmo.position.z = 26;
-    gizmo.visible = false;
-    scene.add(gizmo);
+    // the shop computer: a desktop ON the mat, ports facing your chair.
+    // Click any of it to program the microchips.
+    {
+      const pc = new THREE.Group();
+      pc.position.set(BENCH.cx, -(BENCH.cy - BENCH.h / 2 + 620), 0);
+      pc.scale.setScalar(1.45); // front and center — this is the shop's brain
+      const caseM = new THREE.MeshStandardMaterial({ color: 0x2b2f36, roughness: 0.55, metalness: 0.35 });
+      // the tower, front face toward the user (world +y)
+      const tower = new THREE.Mesh(new THREE.BoxGeometry(300, 620, 660), caseM);
+      tower.position.set(-520, 0, 330);
+      tower.castShadow = true;
+      pc.add(tower);
+      const slotM = new THREE.MeshStandardMaterial({ color: 0x101318, roughness: 0.7 });
+      for (const dz of [420, 330]) {
+        const slot = new THREE.Mesh(new THREE.BoxGeometry(200, 8, 52), slotM);
+        slot.position.set(-520, -312, dz);
+        pc.add(slot);
+      }
+      for (const dx of [-570, -520, -470]) {
+        const usb = new THREE.Mesh(new THREE.BoxGeometry(34, 8, 16), new THREE.MeshStandardMaterial({ color: 0x16181d, roughness: 0.5 }));
+        usb.position.set(dx, -312, 190);
+        pc.add(usb);
+      }
+      const pwr = new THREE.Mesh(
+        new THREE.CylinderGeometry(14, 14, 8, 14),
+        new THREE.MeshStandardMaterial({ color: 0x123227, emissive: 0x34d399, emissiveIntensity: 1.4 })
+      );
+      pwr.rotation.x = Math.PI / 2;
+      pwr.position.set(-520, -312, 540);
+      pc.add(pwr);
+      // the monitor on a stand, screen facing the chair
+      const stand = new THREE.Mesh(new THREE.CylinderGeometry(30, 90, 90, 14).rotateX(Math.PI / 2), caseM);
+      stand.position.set(160, 0, 45);
+      const neck = new THREE.Mesh(new THREE.BoxGeometry(50, 30, 260), caseM);
+      neck.position.set(160, 20, 210);
+      const bezel = new THREE.Mesh(new THREE.BoxGeometry(860, 36, 560), caseM);
+      bezel.position.set(160, 40, 560);
+      bezel.castShadow = true;
+      pc.add(stand, neck, bezel);
+      // the code, glowing on screen
+      const sc = document.createElement("canvas");
+      sc.width = 512;
+      sc.height = 320;
+      const g2 = sc.getContext("2d")!;
+      g2.fillStyle = "#0b1220";
+      g2.fillRect(0, 0, 512, 320);
+      g2.font = "700 26px ui-monospace, monospace";
+      const lines: [string, string][] = [
+        ["#7ce7ff", "// blink — runs forever"],
+        ["#ffc23d", "turn 1 on"],
+        ["#c8cfda", "wait 0.5"],
+        ["#ffc23d", "turn 1 off"],
+        ["#c8cfda", "wait 0.5"],
+        ["#4ade80", "// click me to edit the chips"],
+      ];
+      lines.forEach(([col, txt], i) => {
+        g2.fillStyle = col;
+        g2.fillText(txt, 26, 52 + i * 44);
+      });
+      const scTex = new THREE.CanvasTexture(sc);
+      const screen = new THREE.Mesh(
+        new THREE.PlaneGeometry(800, 500),
+        new THREE.MeshStandardMaterial({ map: scTex, emissive: 0xffffff, emissiveMap: scTex, emissiveIntensity: 0.85 })
+      );
+      screen.position.set(160, 20, 560);
+      screen.rotation.x = Math.PI / 2; // facing the chair
+      pc.add(screen);
+      // the video cable: out of the tower's back, sagging over to the monitor
+      const cablePts = [
+        new THREE.Vector3(-520, 240, 500),
+        new THREE.Vector3(-380, 330, 260),
+        new THREE.Vector3(-120, 300, 120),
+        new THREE.Vector3(120, 140, 180),
+        new THREE.Vector3(160, 60, 320),
+      ].map((v) => v.clone());
+      const cable = new THREE.Mesh(
+        new THREE.TubeGeometry(new THREE.CatmullRomCurve3(cablePts), 32, 9, 8),
+        new THREE.MeshStandardMaterial({ color: 0x16181d, roughness: 0.7 })
+      );
+      pc.add(cable);
+      pc.traverse((o) => (o.userData.uiAction = "laptop"));
+      scene.add(pc);
+    }
+
 
     // one SQUARE frame around a marquee region (no circles — the user hates circles)
     const regionFrame = new THREE.Group();
@@ -544,9 +575,21 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
       raycaster.setFromCamera(ndc, camera);
       const hits = raycaster.intersectObjects(scene.children, true);
       for (const h of hits) {
+        // three.js raycasts THROUGH invisible objects — skip anything whose
+        // ancestor chain is hidden (closed drawer contents, pooled effects)
+        let anc: THREE.Object3D | null = h.object;
+        let hidden = false;
+        while (anc) {
+          if (anc.visible === false) {
+            hidden = true;
+            break;
+          }
+          anc = anc.parent;
+        }
+        if (hidden) continue;
         let o: THREE.Object3D | null = h.object;
         while (o) {
-          if (o.userData.gizmo) return { kind: "gizmo", axis: o.userData.gizmo };
+          if (o.userData.uiAction) return { kind: "action", action: o.userData.uiAction };
           if (o.userData.calcKey && o.userData.partIdKey) {
             return { kind: "calckey", partId: o.userData.partIdKey, key: o.userData.calcKey.key };
           }
@@ -579,7 +622,7 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
 
     const mtx = new THREE.Matrix4();
     const quat = new THREE.Quaternion();
-    const one = new THREE.Vector3(1, 1, 1);
+    const dotScaleVec = new THREE.Vector3(1, 1, 1);
 
     // the camera glides toward its target state instead of snapping — this
     // is what makes moving around feel right
@@ -657,7 +700,8 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
           h.update(p, L, performance.now() / 1000);
         }
 
-        // flow dots along the leads (electron view runs them the real way)
+        // flow dots along the leads (electron view runs them the real way).
+        // They grow with camera distance so the flow reads at EVERY zoom.
         if (Math.abs(p.current) >= 0.002 && !p.destroyed) {
           const bodyW = BODY_W[p.type];
           const padD = Math.max(0, (L - bodyW) / 2);
@@ -668,7 +712,7 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
           const uy = (vb.y - va.y) / L;
           for (let x = offset; x <= L && dotCount < 3000; x += SP) {
             if (bodyW > 0 && x > padD - 3 && x < L - padD + 3) continue;
-            mtx.compose(new THREE.Vector3(va.x + ux * x, -(va.y + uy * x), 9), quat, one);
+            mtx.compose(new THREE.Vector3(va.x + ux * x, -(va.y + uy * x), 13.5 + dotScaleVec.x * 2), quat, dotScaleVec);
             dots.setMatrixAt(dotCount++, mtx);
           }
         }
@@ -764,6 +808,22 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
       }
 
       // ——— vertices ———
+      // a vertex whose only parts are breadboards gets no ball — the board is
+      // a platform, and bare metal dots on its sides looked wrong
+      const bbOnly = new Set<string>();
+      {
+        const nonBB = new Set<string>();
+        for (const p of circ.parts) {
+          if (p.type === "breadboard") {
+            bbOnly.add(p.a);
+            bbOnly.add(p.b);
+          } else {
+            nonBB.add(p.a);
+            nonBB.add(p.b);
+          }
+        }
+        for (const id of nonBB) bbOnly.delete(id);
+      }
       const seenV = new Set<string>();
       for (const v of circ.vertices) {
         seenV.add(v.id);
@@ -772,9 +832,18 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
           m = new THREE.Mesh(vertGeo, vertMatOpen);
           m.castShadow = true;
           m.userData.vertexId = v.id;
+          // a generous invisible grab bubble: clicking anywhere near the ball
+          // grabs the BALL, never the part behind it
+          const bubble = new THREE.Mesh(
+            new THREE.SphereGeometry(2.6, 8, 6),
+            new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+          );
+          bubble.userData.vertexId = v.id;
+          m.add(bubble);
           scene.add(m);
           vertexMeshes.set(v.id, m);
         }
+        m.visible = !bbOnly.has(v.id);
         const deg = ui.degrees.get(v.id) ?? 0;
         m.material = deg >= 2 ? vertMatJoined : vertMatOpen;
         m.scale.setScalar(deg >= 2 ? 5.5 : 6.2);
@@ -788,21 +857,7 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
       }
 
       // ——— selection / snap / handle ———
-      // the move gizmo rides on the selected part
-      const gizPart = ui.selectedId ? circ.parts.find((pp) => pp.id === ui.selectedId) : null;
-      if (gizPart && !gizPart.destroyed) {
-        const ga = vmap.get(gizPart.a);
-        const gb = vmap.get(gizPart.b);
-        if (ga && gb) {
-          gizmo.visible = true;
-          gizmo.position.set((ga.x + gb.x) / 2, -(ga.y + gb.y) / 2, 26);
-          gizmo.scale.setScalar(Math.min(4, Math.max(0.7, cur.dist / 950)));
-        } else {
-          gizmo.visible = false;
-        }
-      } else {
-        gizmo.visible = false;
-      }
+      dotScaleVec.setScalar(Math.max(1, cur.dist / 1000));
 
       // one square frame around the marquee REGION — a plain click draws nothing
       const selIds = ui.selectedIds.length > 1 ? ui.selectedIds : [];

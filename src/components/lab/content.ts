@@ -8,6 +8,7 @@ export const TOOLBOX: { title: string; items: PartType[] }[] = [
   {
     title: "Build",
     items: [
+      "breadboard",
       "wire",
       "battery",
       "switch",
@@ -19,14 +20,21 @@ export const TOOLBOX: { title: string; items: PartType[] }[] = [
       "capacitor",
       "inductor",
       "fuse",
+      "ptc",
+      "zener",
+      "neon",
+      "heater",
       "motor",
+      "pot",
+      "rgbled",
+      "servo",
     ],
   },
-  { title: "Inputs & sound", items: ["button", "blinker", "speaker", "buzzer", "voicebox"] },
+  { title: "Inputs & sound", items: ["button", "blinker", "speaker", "buzzer", "voicebox", "tiltswitch"] },
   { title: "Measure", items: ["ammeter", "voltmeter"] },
   {
     title: "Logic & sensors",
-    items: ["coil", "relay", "lightsensor", "heatsensor", "solar", "memory"],
+    items: ["coil", "relay", "lightsensor", "heatsensor", "solar", "ultrasonic", "pir", "soundsensor", "chip"],
   },
 ];
 
@@ -57,15 +65,35 @@ export const LEARN: Record<PartType, string> = {
   inductor: "A coil of wire that hates change. Current through it can't jump — it has to ramp up, and when you cut the power it fights back with a voltage kick. The magnetic partner of the capacitor.",
   buzzer: "The simplest noisemaker: one fixed, rude tone. More current just makes it louder. Real ones are a little disc that bends thousands of times a second.",
   voicebox: "A tiny speech machine. Every letter gets its own mouth-shape sound — vowels hum at two special frequencies, S hisses, P pops. The first real one (Bell Labs' Voder, 1939) worked exactly this way, played live from a keyboard.",
-  coil: "Wrap wire in loops and run current through it — you get a magnet you can switch on and off. Every magnetic switch tuned to its channel number feels it, no wires needed.",
-  relay: "A switch flipped by a coil's magnetism instead of your finger. Chain these and you can compute: two in a row = AND, side by side = OR, a 'flipped' one = NOT. Rooms full of these were the first computers.",
+  coil:
+    "An electromagnet: a few hundred loops of wire wrapped around an iron core. Push current through the loops and their little magnetic fields all stack up into one strong magnet; cut the current and the magnetism vanishes instantly. The dial picks which CHANNEL (1-6) it broadcasts on — any magnetic switch tuned to the same number feels it across the bench, no wires between them. More current = a stronger pull.",
+  relay:
+    "A magnetic switch — a springy iron strip that snaps shut when a coil on its channel is energized, and springs back open the moment the magnetism dies. It's how a WEAK circuit can control a STRONG one: the tiny coil current never touches this switch's circuit, it just reaches over magnetically and flips it. Set it 'normally closed' and it does the opposite: open while the magnet is on. Chain a few and you have logic: two in a row = AND, two side by side = OR.",
   lightsensor: "In the dark it resists like rubber; in bright light it conducts almost happily. Park it near a bulb and it becomes an eye for your circuit.",
   heatsensor: "Its resistance falls as things near it heat up. Pair it with a coil and a magnetic switch and you've built a genuine fire alarm.",
   solar: "Light knocks electrons loose in the panel, and that IS a voltage. The brighter the light landing on it, the harder it pushes. Free power — as long as something shines on it.",
+  zener:
+    "A diode with a designed weakness: forward, it's a normal one-way valve; backward, it holds the line until about 5 volts and then conducts ON PURPOSE, clamping the voltage right there. That clamp protects delicate parts from spikes.",
+  neon:
+    "Two metal pins in a glass bubble of neon gas. Below about 65 volts the gas is an insulator; above it, the gas ionizes and glows that famous orange. Old machines used them as power lights straight off the mains.",
+  ptc: "A resettable fuse (a PTC). Overload it and it heats up; heat makes its plastic-and-carbon body resist harder, which strangles the current before anything burns. Unlike a normal fuse, it cools off and forgives you.",
+  breadboard:
+    "A slab of plastic full of sockets. The holes in each little column are joined by metal strips inside, so parts pushed into the same column connect without solder. Here it's your building platform — nothing conducts through its body.",
+  pot: "A potentiometer — a resistor with a knob. Inside, a wiper slides along a carbon track: more track between the contacts, more resistance. Every volume dial you've ever turned was one of these.",
+  rgbled:
+    "Three tiny LEDs — red, green, blue — sharing one lens. Push current through it and its color sweeps with the strength of the flow. Every pixel on your screen is this exact trick, shrunk a thousandfold.",
+  tiltswitch:
+    "A little tube with a metal ball inside. Hold it level and the ball sits away from the contacts; tilt it and the ball rolls down and bridges them. Drag one of its ends up or down to tip it.",
+  servo: "A motor with its own tiny brain: instead of spinning forever it swings an arm TO an angle and holds it there. More volts, bigger swing. Robot arms and RC-car steering are stacks of these.",
+  ultrasonic:
+    "Sonar, like a bat: one eye clicks, the other listens for the echo. Here, the closer any other part sits to it, the better it conducts — park something next to it and it wakes right up.",
+  pir: "A motion sensor. It doesn't see things — it sees CHANGE. Move anything nearby and it conducts for a moment, then settles back to silence. Every automatic hallway light has one watching.",
+  soundsensor:
+    "A microphone driving a switch: while something nearby is making noise — a buzzer, a speaker, the talking machine — it conducts. Clap-activated lights are exactly this.",
   memory:
     "A memory cell. It holds one number on its screen and adds one every time current STARTS flowing through it. Cut the power completely — it still remembers. Inside are latching switches: switches that stay flipped after the push that flipped them is gone.",
   chip: "A microcontroller — a whole computer the size of a fingernail, ready to be programmed. Power its two pins and its onboard light blinks its 'I'm alive' heartbeat. Later steps will teach it tricks; for now it's the newest tool on your bench.",
-  usbc: "The little connector that took over the world. Any phone charger pushes five steady, safe volts through it — which is why USB-C is the modern bench power supply for small electronics.",
+  usbc: "The USB lead from the shop laptop: five steady, safe volts. It's how a real Arduino gets its power and its programs — wire it to your microchip's pins and the board wakes up.",
   calculator: "Inside this box are thousands of the same magnetic-switch tricks you can build yourself — the 1+1 adder, repeated and chained until it can multiply and divide. Real chips just shrink those switches down to specks of silicon. No power, no math: it's a circuit part like any other.",
 };
 

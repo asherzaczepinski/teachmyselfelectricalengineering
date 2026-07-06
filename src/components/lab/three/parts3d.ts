@@ -2,7 +2,7 @@
 // (L,0,0) along +x, sitting on the board plane z=0 (z is up).
 
 import * as THREE from "three";
-import { CHANNEL_COLORS, LED_COLORS, LETTER_SECONDS, Part } from "../../../lib/sim";
+import {CATALOG, CHANNEL_COLORS, LED_COLORS, LETTER_SECONDS, Part } from "../../../lib/sim";
 import { BODY_W, CALC_KEYPAD, calcKeyRect, PIXEL_FONT } from "../Glyph";
 
 export const LEAD_Z = 7;
@@ -65,10 +65,11 @@ function cylZ(r: number, h: number, mat: THREE.Material, x: number, y: number, z
   return m;
 }
 
-function leads(g: THREE.Group, L: number, pad: number) {
+function leads(g: THREE.Group, L: number, pad: number, over = 2) {
+  // `over` pushes the lead past the pad so it visibly meets the body's side
   if (pad > 2) {
-    g.add(cylX(pad + 2, 2.2, M.copper, pad / 2, 0, LEAD_Z));
-    g.add(cylX(pad + 2, 2.2, M.copper, L - pad / 2, 0, LEAD_Z));
+    g.add(cylX(pad + over, 2.2, M.copper, (pad + over) / 2 - 1, 0, LEAD_Z));
+    g.add(cylX(pad + over, 2.2, M.copper, L - (pad + over) / 2 + 1, 0, LEAD_Z));
   }
   // little feet so parts visibly sit on the board
   g.add(cylZ(2.2, LEAD_Z, M.copper, 0, 0, LEAD_Z / 2));
@@ -106,6 +107,18 @@ export function textSprite(text: string, color: string, worldH: number): THREE.S
   const img = tex.image as HTMLCanvasElement;
   s.scale.set((worldH * img.width) / img.height, worldH, 1);
   return s;
+}
+
+// a label printed flat onto an object — it rotates WITH the thing it's on,
+// unlike a sprite, which would swivel to face the camera
+export function textPlane(text: string, color: string, worldH: number): THREE.Mesh {
+  const tex = textTexture(text, color);
+  const img = tex.image as HTMLCanvasElement;
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry((worldH * img.width) / img.height, worldH),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide })
+  );
+  return m;
 }
 
 let glowTex: THREE.CanvasTexture | null = null;
@@ -209,16 +222,12 @@ export function buildPart(p: Part, L: number): PartHandle {
       for (let i = 0; i < p.id.length; i++) hsh = (hsh * 31 + p.id.charCodeAt(i)) >>> 0;
       const baseColor = WIRE_COLORS[hsh % WIRE_COLORS.length];
       const ins = new THREE.MeshStandardMaterial({ color: baseColor, roughness: 0.45, metalness: 0.05 });
+      // insulation runs clean into the ball joints — nothing else at the ends
       const body = cylX(1, 3.6, ins, cx, 0, LEAD_Z);
-      const tipA = cylX(16, 2, M.steel, 9, 0, LEAD_Z);
-      const tipB = cylX(16, 2, M.steel, L - 9, 0, LEAD_Z);
-      g.add(body, tipA, tipB);
-      g.add(cylZ(2.4, LEAD_Z, M.steel, 0, 0, LEAD_Z / 2));
-      g.add(cylZ(2.4, LEAD_Z, M.steel, L, 0, LEAD_Z / 2));
+      g.add(body);
       update = (p2, L2) => {
-        body.scale.x = Math.max(4, L2 - 28);
+        body.scale.x = Math.max(4, L2);
         body.position.x = L2 / 2;
-        tipB.position.x = L2 - 9;
         heatTint(ins, baseColor, p2.temp);
       };
       break;
@@ -269,7 +278,7 @@ export function buildPart(p: Part, L: number): PartHandle {
       break;
     }
     case "bulb": {
-      leads(g, L, pad);
+      leads(g, L, pad, 16);
       const glass = mesh(GEO.sphere, M.glass.clone());
       glass.scale.setScalar(16);
       glass.position.set(cx, 0, LEAD_Z + 16);
@@ -305,7 +314,7 @@ export function buildPart(p: Part, L: number): PartHandle {
     }
     case "led":
     case "diode": {
-      leads(g, L, pad);
+      leads(g, L, pad, 14);
       const tint = p.type === "led" ? new THREE.Color(LED_COLORS[p.color] ?? "#ff5a49") : new THREE.Color(0x94a3b8);
       const bodyMat = new THREE.MeshStandardMaterial({ color: 0x3f3f46, emissive: tint, emissiveIntensity: 0 });
       const body = cylX(16, 7.5, bodyMat, cx, 0, LEAD_Z);
@@ -718,6 +727,226 @@ export function buildPart(p: Part, L: number): PartHandle {
       update = deviceUpdate;
       break;
     }
+    case "chip": {
+      leads(g, L, pad);
+      // a proper UNO: teal board, pin-header rows, USB port, barrel jack
+      const pcb = boxAt(78, 54, 4, new THREE.MeshStandardMaterial({ color: 0x0b6e8c, roughness: 0.5 }), cx, 0, LEAD_Z);
+      g.add(pcb);
+      const headerM = new THREE.MeshStandardMaterial({ color: 0x16181d, roughness: 0.7 });
+      const hTop = boxAt(52, 6, 7, headerM, cx + 4, 22, LEAD_Z + 5);
+      const hBot = boxAt(52, 6, 7, headerM, cx + 4, -22, LEAD_Z + 5);
+      g.add(hTop, hBot);
+      for (let i = 0; i < 13; i++) {
+        g.add(boxAt(1.2, 1.2, 4, M.steel, cx - 20 + i * 4, 22, LEAD_Z + 10));
+        g.add(boxAt(1.2, 1.2, 4, M.steel, cx - 20 + i * 4, -22, LEAD_Z + 10));
+      }
+      const mcu = boxAt(34, 10, 5, M.darker, cx + 4, 8, LEAD_Z + 4);
+      g.add(mcu);
+      const usb = boxAt(14, 12, 8, M.steel, cx - 33, 12, LEAD_Z + 5);
+      const jack = boxAt(12, 11, 9, new THREE.MeshStandardMaterial({ color: 0x111318, roughness: 0.6 }), cx - 32, -10, LEAD_Z + 5);
+      g.add(usb, jack);
+      const beatMat = new THREE.MeshStandardMaterial({ color: 0x134e4a, emissive: 0x4ade80, emissiveIntensity: 0 });
+      g.add(boxAt(4, 4, 3, beatMat, cx + 28, 8, LEAD_Z + 5));
+      const pwrMat = new THREE.MeshStandardMaterial({ color: 0x4a1414, emissive: 0xef4444, emissiveIntensity: 0 });
+      g.add(boxAt(4, 4, 3, pwrMat, cx + 28, -2, LEAD_Z + 5));
+      update = (p2, _L2, t) => {
+        const powered = !p2.destroyed && Math.abs(p2.current) > 0.01;
+        pwrMat.emissiveIntensity = powered ? 1.4 : 0; // ON light: it has power
+        beatMat.emissiveIntensity = powered && t % 1 < 0.5 ? 1.6 : 0; // heartbeat
+      };
+      break;
+    }
+    case "zener": {
+      leads(g, L, pad, 14);
+      const body = cylX(16, 7.5, new THREE.MeshStandardMaterial({ color: 0x8a6d1a, roughness: 0.5 }), cx, 0, LEAD_Z);
+      const band = cylX(3, 8, M.darker, cx + 10, 0, LEAD_Z);
+      g.add(body, band);
+      break;
+    }
+    case "neon": {
+      leads(g, L, pad, 14);
+      const gasMat = new THREE.MeshStandardMaterial({ color: 0x3a2410, emissive: 0xfb923c, emissiveIntensity: 0, transparent: true, opacity: 0.75 });
+      const bulb = new THREE.Mesh(new THREE.SphereGeometry(10, 14, 10), gasMat);
+      bulb.position.set(cx, 0, LEAD_Z + 6);
+      const glow = glowSprite(0xfb923c, 70);
+      glow.position.set(cx, 0, LEAD_Z + 8);
+      (glow.material as THREE.SpriteMaterial).opacity = 0;
+      g.add(bulb, glow);
+      update = (p2) => {
+        const on = (p2.ledOn || p2.engaged) && Math.abs(p2.current) > 0.001;
+        gasMat.emissiveIntensity = on ? 1.8 : 0;
+        (glow.material as THREE.SpriteMaterial).opacity = on ? 0.8 : 0;
+      };
+      break;
+    }
+    case "ptc": {
+      leads(g, L, pad, 12);
+      const discMat = new THREE.MeshStandardMaterial({ color: 0xf2c230, roughness: 0.7, emissive: 0xff3d00, emissiveIntensity: 0 });
+      const disc = cylX(6, 10, discMat, cx, 0, LEAD_Z + 4);
+      g.add(disc);
+      update = (p2) => {
+        discMat.emissiveIntensity = Math.max(0, Math.min(1.4, (p2.temp - 60) / 60));
+      };
+      break;
+    }
+    case "breadboard": {
+      // the classic prototyping slab, holes and rails painted on
+      const tex = (() => {
+        const c = document.createElement("canvas");
+        c.width = 512;
+        c.height = 288;
+        const g2 = c.getContext("2d")!;
+        g2.fillStyle = "#dcd9cf";
+        g2.fillRect(0, 0, 512, 288);
+        g2.fillStyle = "#b91c1c";
+        g2.fillRect(12, 22, 488, 4);
+        g2.fillStyle = "#1d4ed8";
+        g2.fillRect(12, 40, 488, 4);
+        g2.fillStyle = "#b91c1c";
+        g2.fillRect(12, 246, 488, 4);
+        g2.fillStyle = "#1d4ed8";
+        g2.fillRect(12, 264, 488, 4);
+        g2.fillStyle = "#d0cdc2";
+        g2.fillRect(0, 138, 512, 12);
+        // the rails wear their signs, like the real thing
+        g2.font = "700 22px Inter, system-ui, sans-serif";
+        g2.fillStyle = "#b91c1c";
+        g2.fillText("+", 2, 34);
+        g2.fillText("+", 500, 34);
+        g2.fillText("+", 2, 258);
+        g2.fillText("+", 500, 258);
+        g2.fillStyle = "#1d4ed8";
+        g2.fillText("−", 2, 52);
+        g2.fillText("−", 500, 52);
+        g2.fillText("−", 2, 276);
+        g2.fillText("−", 500, 276);
+        g2.fillStyle = "#2e2e33";
+        for (let x = 24; x < 500; x += 16) {
+          for (const y of [28, 46, 250, 268]) g2.fillRect(x, y - 3, 5, 5);
+          for (let y = 78; y <= 126; y += 16) g2.fillRect(x, y, 5, 5);
+          for (let y = 158; y <= 206; y += 16) g2.fillRect(x, y, 5, 5);
+        }
+        const t = new THREE.CanvasTexture(c);
+        t.anisotropy = 8;
+        return t;
+      })();
+      const slab = boxAt(300, 168, 10, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.85 }), cx, 0, 5);
+      const face = new THREE.Mesh(new THREE.PlaneGeometry(300, 168), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.85 }));
+      face.position.set(cx, 0, 10.2);
+      g.add(slab, face);
+      break;
+    }
+    case "pot": {
+      leads(g, L, pad);
+      g.add(boxAt(56, 30, 16, M.dark, cx, 0, LEAD_Z + 2));
+      const knob = new THREE.Mesh(new THREE.CylinderGeometry(11, 12, 12, 18).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x30363f, roughness: 0.4, metalness: 0.5 }));
+      knob.position.set(cx, 0, LEAD_Z + 16);
+      const notch = boxAt(2.4, 10, 2, M.steel, cx, 5, LEAD_Z + 22);
+      g.add(knob, notch);
+      update = (p2) => {
+        const def2 = CATALOG.pot;
+        const f = Math.log(p2.resistance / (def2.minR ?? 1)) / Math.log((def2.maxR ?? 5000) / (def2.minR ?? 1));
+        knob.rotation.y = (f - 0.5) * 4.2;
+        notch.position.x = cx + Math.sin((f - 0.5) * 4.2) * 8;
+        notch.position.y = Math.cos((f - 0.5) * 4.2) * 8;
+      };
+      break;
+    }
+    case "rgbled": {
+      leads(g, L, pad);
+      const lensMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, emissive: 0x000000, emissiveIntensity: 0, transparent: true, opacity: 0.85 });
+      const lens = new THREE.Mesh(new THREE.SphereGeometry(9, 16, 12), lensMat);
+      lens.position.set(cx, 0, LEAD_Z + 6);
+      const glow = glowSprite(0xffffff, 66);
+      glow.position.set(cx, 0, LEAD_Z + 8);
+      (glow.material as THREE.SpriteMaterial).opacity = 0;
+      // the real package has four legs — longest is the common pin
+      for (const [dx, h] of [
+        [-6, 10],
+        [-2, 14],
+        [2, 10],
+        [6, 8],
+      ] as [number, number][]) {
+        g.add(cylZ(0.8, h, M.steel, cx + dx, 0, h / 2));
+      }
+      g.add(lens, glow);
+      update = (p2) => {
+        const amps = Math.abs(p2.current);
+        const on = p2.ledOn && amps > 0.001 && !p2.destroyed;
+        const hue = Math.min(0.83, amps * 14); // red → violet as the push grows
+        const c = new THREE.Color().setHSL(on ? hue : 0, 1, 0.55);
+        lensMat.emissive = c;
+        lensMat.emissiveIntensity = on ? 1.8 : 0;
+        (glow.material as THREE.SpriteMaterial).color = c;
+        (glow.material as THREE.SpriteMaterial).opacity = on ? 0.75 : 0;
+      };
+      break;
+    }
+    case "tiltswitch": {
+      leads(g, L, pad);
+      const tube = new THREE.Mesh(new THREE.CylinderGeometry(8, 8, 52, 14, 1, true).rotateZ(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0x9aa3ae, roughness: 0.35, metalness: 0.8, side: THREE.DoubleSide, transparent: true, opacity: 0.85 }));
+      tube.position.set(cx, 0, LEAD_Z + 4);
+      const ball = new THREE.Mesh(new THREE.SphereGeometry(6, 12, 10), M.steel);
+      ball.position.set(cx, 0, LEAD_Z + 4);
+      g.add(tube, ball);
+      update = (p2) => {
+        const want = p2.closed ? cx - 18 : cx;
+        ball.position.x += (want - ball.position.x) * 0.25;
+      };
+      break;
+    }
+    case "servo": {
+      leads(g, L, pad);
+      g.add(boxAt(52, 32, 26, new THREE.MeshStandardMaterial({ color: 0x2458c6, roughness: 0.6 }), cx, 0, LEAD_Z + 6));
+      const hub = new THREE.Mesh(new THREE.CylinderGeometry(7, 7, 8, 14).rotateX(Math.PI / 2), new THREE.MeshStandardMaterial({ color: 0xe8e2d2, roughness: 0.5 }));
+      hub.position.set(cx + 12, 0, LEAD_Z + 23);
+      const horn = boxAt(34, 6, 4, new THREE.MeshStandardMaterial({ color: 0xe8e2d2, roughness: 0.5 }), 14, 0, 0);
+      const hornGrp = new THREE.Group();
+      hornGrp.add(horn);
+      hornGrp.position.set(cx + 12, 0, LEAD_Z + 27);
+      g.add(hub, hornGrp);
+      update = (p2) => {
+        hornGrp.rotation.z = p2.spin;
+      };
+      break;
+    }
+    case "ultrasonic": {
+      leads(g, L, pad);
+      g.add(boxAt(60, 34, 5, new THREE.MeshStandardMaterial({ color: 0x2458c6, roughness: 0.55 }), cx, 0, LEAD_Z));
+      const eyeMat = new THREE.MeshStandardMaterial({ color: 0x9aa3ae, roughness: 0.3, metalness: 0.8 });
+      const mesh1 = new THREE.Mesh(new THREE.CylinderGeometry(9, 9, 12, 16).rotateX(Math.PI / 2), eyeMat);
+      mesh1.position.set(cx - 13, 0, LEAD_Z + 8);
+      const mesh2 = mesh1.clone();
+      mesh2.position.x = cx + 13;
+      const innerMat = new THREE.MeshStandardMaterial({ color: 0x16181d, emissive: 0x7ce7ff, emissiveIntensity: 0 });
+      const in1 = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 13, 14).rotateX(Math.PI / 2), innerMat);
+      in1.position.copy(mesh1.position);
+      const in2 = in1.clone();
+      in2.position.x = cx + 13;
+      g.add(mesh1, mesh2, in1, in2);
+      update = (p2) => (innerMat.emissiveIntensity = p2.sense * 1.4);
+      break;
+    }
+    case "pir": {
+      leads(g, L, pad);
+      g.add(boxAt(40, 30, 5, new THREE.MeshStandardMaterial({ color: 0x2458c6, roughness: 0.55 }), cx, 0, LEAD_Z));
+      const domeMat = new THREE.MeshStandardMaterial({ color: 0xe8e2d2, roughness: 0.8, transparent: true, opacity: 0.92, emissive: 0xffc23d, emissiveIntensity: 0 });
+      const dome = new THREE.Mesh(new THREE.SphereGeometry(12, 16, 10, 0, Math.PI * 2, 0, Math.PI / 2), domeMat);
+      dome.position.set(cx, 0, LEAD_Z + 3);
+      g.add(dome);
+      update = (p2) => (domeMat.emissiveIntensity = p2.sense > 0 ? 0.9 : 0);
+      break;
+    }
+    case "soundsensor": {
+      leads(g, L, pad);
+      g.add(boxAt(40, 28, 5, new THREE.MeshStandardMaterial({ color: 0x2458c6, roughness: 0.55 }), cx, 0, LEAD_Z));
+      const micMat = new THREE.MeshStandardMaterial({ color: 0x16181d, roughness: 0.4, metalness: 0.4, emissive: 0x7ce7ff, emissiveIntensity: 0 });
+      const mic = new THREE.Mesh(new THREE.CylinderGeometry(7, 7, 10, 14).rotateX(Math.PI / 2), micMat);
+      mic.position.set(cx + 8, 0, LEAD_Z + 7);
+      g.add(mic);
+      update = (p2) => (micMat.emissiveIntensity = p2.sense * 1.5);
+      break;
+    }
   }
 
   return { group: g, builtLen: L, builtType: p.type, update, hit };
@@ -926,15 +1155,53 @@ function buildCalculatorFace(g: THREE.Group, p: Part, cx: number) {
 }
 
 function buildVoiceFace(g: THREE.Group, p: Part, cx: number) {
-  g.add(boxAt(70, 36, 18, M.dark, cx, 0, 9));
-  for (const dx of [-22, -14, -6, 2, 10]) g.add(boxAt(3, 22, 1.5, M.darker, cx + dx, 0, 18.2));
+  // an open chassis: you can SEE the machine talk — the buzzing reed, the
+  // row of formant filter levers picking the mouth shape, and the cone
+  g.add(boxAt(70, 36, 4, M.dark, cx, 0, 2)); // just a floor plate, no lid
+  g.add(boxAt(70, 3, 16, M.darker, cx, 16.5, 8));
+  g.add(boxAt(70, 3, 16, M.darker, cx, -16.5, 8));
+  // the reed (buzzer disc) that makes the raw tone
+  const reedMat = new THREE.MeshStandardMaterial({ color: 0x8a6d1a, emissive: 0xf2c230, emissiveIntensity: 0 });
+  const reed = new THREE.Mesh(new THREE.CylinderGeometry(6, 6, 3, 14).rotateX(Math.PI / 2), reedMat);
+  reed.position.set(cx - 24, 0, 8);
+  g.add(reed);
+  // eight filter levers — each letter flips its own pattern of them
+  const levers: THREE.Mesh[] = [];
+  const leverMats: THREE.MeshStandardMaterial[] = [];
+  for (let i = 0; i < 8; i++) {
+    const m = new THREE.MeshStandardMaterial({ color: 0x46536b, emissive: 0xffc23d, emissiveIntensity: 0 });
+    const lv = new THREE.Mesh(new THREE.BoxGeometry(2.6, 5, 12), m);
+    lv.position.set(cx - 13 + i * 4.4, 0, 10);
+    levers.push(lv);
+    leverMats.push(m);
+    g.add(lv);
+  }
+  // the speaker cone that finally says it out loud
+  const cone = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.5, 10, 8, 16, 1, true).rotateX(Math.PI / 2),
+    new THREE.MeshStandardMaterial({ color: 0x22262e, roughness: 0.6, side: THREE.DoubleSide })
+  );
+  cone.position.set(cx + 25, 0, 10);
+  g.add(cone);
   const winMat = new THREE.MeshStandardMaterial({ color: 0x334155, emissive: 0xf59e0b, emissiveIntensity: 0 });
-  g.add(boxAt(14, 22, 2, winMat, cx + 22, 0, 18.2));
   const letter = textSprite("·", "#1c1400", 15);
-  letter.position.set(cx + 22, 0, 24);
+  letter.position.set(cx + 22, 0, 26);
   g.add(letter);
   let last = "";
-  const deviceUpdate = (p2: Part) => {
+  const animateGuts = (p2: Part, t: number) => {
+    const speaking = p2.playing && Math.abs(p2.current) > 0.02;
+    const ci = Math.max(0, Math.floor(p2.playPos / 0.22)) % Math.max(1, p2.text.length);
+    const code = speaking ? p2.text.toLowerCase().charCodeAt(ci) || 0 : 0;
+    reedMat.emissiveIntensity = speaking ? 0.9 + 0.5 * Math.sin(t * 60) : 0;
+    levers.forEach((lv, i) => {
+      const on = speaking && ((code >> i) & 1) === 1;
+      lv.rotation.x += ((on ? -0.7 : 0) - lv.rotation.x) * 0.3;
+      leverMats[i].emissiveIntensity = on ? 1.1 : 0;
+    });
+    cone.position.z = 10 + (speaking ? Math.sin(t * 90) * 0.9 : 0);
+  };
+  const deviceUpdate = (p2: Part, _L2?: number, t = 0) => {
+    animateGuts(p2, t);
     const speaking = p2.playing && Math.abs(p2.current) > 0.02;
     const idx = Math.floor(p2.playPos / LETTER_SECONDS);
     const ch = speaking ? (p2.text[idx] ?? "").toUpperCase() : "";

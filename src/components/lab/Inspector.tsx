@@ -3,6 +3,7 @@
 // The panel that opens when a part is selected: its knobs, its readings,
 // and its remove button. One case per part type that has anything to say.
 
+import { useState } from "react";
 import { CATALOG, CHANNEL_COLORS, LED_COLORS, LedColor, MotorAttachment, NOTES, Part } from "../../lib/sim";
 import { fmtAmps, fmtVolts } from "../../lib/fmt";
 
@@ -50,7 +51,7 @@ export function Inspector({
                 onChange={(v) => set((p) => (p.voltage = v))}
               />
               <p className="text-[11px] text-[var(--ink-3)] mt-1 mb-2">
-                A little battery is 9 volts. A wall outlet pushes about 120 volts.
+                A little battery is 9 volts. Crank it to 120 and it pushes like household mains.
               </p>
               <button className="btn" onClick={onFlip}>
                 Swap the + and − ends
@@ -59,6 +60,7 @@ export function Inspector({
           )}
 
           {(part.type === "resistor" ||
+            part.type === "pot" ||
             part.type === "bulb" ||
             part.type === "heater" ||
             part.type === "hairdryer") && (
@@ -347,6 +349,10 @@ export function Inspector({
             </>
           )}
 
+          {part.type === "chip" && (
+            <ChipEditor part={part} />
+          )}
+
           {part.type === "memory" && (
             <>
               <p className="text-[13px] mb-2" style={{ fontFamily: "var(--font-mono)" }}>
@@ -446,5 +452,74 @@ function SimSlider({
         onChange={(e) => onChange(parseFloat(e.target.value))}
       />
     </label>
+  );
+}
+
+// the microchip's code editor, with its language manual one click away
+export function ChipEditor({ part }: { part: Part }) {
+  const [showDocs, setShowDocs] = useState(false);
+  return (
+    <>
+      <div className="flex items-center mb-1">
+        <label className="text-[12px] text-[var(--ink-2)]">Its program (runs top to bottom, forever):</label>
+        <div className="flex-1" />
+        <button
+          className="btn"
+          style={{ padding: "2px 8px" }}
+          aria-expanded={showDocs}
+          title="The chip's little language, explained"
+          onClick={() => setShowDocs((v) => !v)}
+        >
+          ?
+        </button>
+      </div>
+      {showDocs && (
+        <div className="border border-[var(--line)] bg-[#0b1220] p-2 mb-2 text-[11px] leading-relaxed text-[var(--ink-2)]">
+          <p className="mb-1">
+            <b>turn 3 on</b> / <b>turn 3 off</b> — drive magnetic channel 3. Any magnetic switch set to
+            channel 3 obeys, anywhere on the bench.
+          </p>
+          <p className="mb-1">
+            <b>wait 0.5</b> — pause half a second before the next line.
+          </p>
+          <p className="mb-1">
+            <b>if 2 is on</b> … <b>end</b> — run the lines in between only while channel 2 is energized
+            (wire a button to an electromagnet coil on channel 2 to make an input).
+          </p>
+          <p className="mb-1">
+            <b>if 2 is off</b> … <b>end</b> — the opposite test.
+          </p>
+          <p>
+            When it runs out of lines it starts over at the top, forever — but only while current flows
+            through its two pins. Lines it doesn&apos;t understand are skipped.
+          </p>
+        </div>
+      )}
+      <textarea
+        className="sim-input w-full h-28 resize-y"
+        style={{ fontFamily: "var(--font-mono)", fontSize: 11, lineHeight: 1.5 }}
+        value={part.text}
+        spellCheck={false}
+        onChange={(e) => {
+          /* eslint-disable react-hooks/immutability -- the chip program lives on the
+             simulation part; the frame loop re-renders. Same pattern as every knob. */
+          part.text = e.target.value;
+          part.pc = 0;
+          part.chipWait = 0;
+          part.chipDrive = 0;
+          /* eslint-enable react-hooks/immutability */
+        }}
+      />
+      <p className="text-[11px] mt-1" style={{ fontFamily: "var(--font-mono)" }}>
+        {Math.abs(part.current) > 0.01 ? (
+          <span className="text-[var(--accent)]">
+            running · driving{" "}
+            {[1, 2, 3, 4, 5, 6].filter((ch) => part.chipDrive & (1 << ch)).join(", ") || "nothing"}
+          </span>
+        ) : (
+          <span className="text-[var(--ink-3)]">no power — the program is stopped</span>
+        )}
+      </p>
+    </>
   );
 }

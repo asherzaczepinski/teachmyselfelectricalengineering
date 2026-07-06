@@ -27,9 +27,9 @@ import {
 } from "../../lib/sim";
 import { GUIDES } from "../../lib/guides";
 import { Model, MODELS } from "../../lib/models";
-import { Glyph } from "./Glyph";
 import { TOOLBOX, microMaterial, explainSymbols } from "./content";
-import { Inspector } from "./Inspector";
+import { Glyph } from "./Glyph";
+import { ChipEditor, Inspector } from "./Inspector";
 import { OrientationBall } from "./OrientationBall";
 import ThreeBoard, {
   BENCH,
@@ -61,7 +61,6 @@ type Drag =
   | { kind: "marquee"; x0: number; y0: number; x1: number; y1: number }
   | { kind: "pan"; lastX: number; lastY: number }
   | { kind: "group"; lastX: number; lastY: number }
-  | { kind: "gizmo"; axis: "x" | "z" | "xy"; partId: string; lastX: number; lastY: number }
   | { kind: "orbit"; lastX: number; lastY: number };
 
 const SOLDER_MS = 850; // hold a dot on a dot this long and it fuses
@@ -79,15 +78,6 @@ function clamp(v: number, lo: number, hi: number) {
   return Math.min(Math.max(v, lo), hi);
 }
 
-function previewPart(type: PartType): Part {
-  return {
-    id: `preview-${type}`,
-    a: "pa",
-    b: "pb",
-    ...blankPart(type),
-    key: type === "button" ? "a" : "",
-  };
-}
 
 interface VoiceNodes {
   osc: OscillatorNode;
@@ -111,6 +101,61 @@ interface AudioBits {
 
 
 export { LEARN, TOOLBOX } from "./content";
+
+// a miniature wiring sketch of a ready-made build, drawn from its real parts
+function ModelPreview({ model }: { model: Model }) {
+  const { frag, box } = useMemo(() => {
+    const frag = model.build(0, 0);
+    let x0 = Infinity,
+      y0 = Infinity,
+      x1 = -Infinity,
+      y1 = -Infinity;
+    for (const v of frag.vertices) {
+      x0 = Math.min(x0, v.x);
+      y0 = Math.min(y0, v.y);
+      x1 = Math.max(x1, v.x);
+      y1 = Math.max(y1, v.y);
+    }
+    return { frag, box: { x0, y0, w: Math.max(1, x1 - x0), h: Math.max(1, y1 - y0) } };
+  }, [model]);
+  const vmap = new Map(frag.vertices.map((v) => [v.id, v]));
+  return (
+    <svg
+      width="100%"
+      height="52"
+      viewBox={`${box.x0 - 30} ${box.y0 - 30} ${box.w + 60} ${box.h + 60}`}
+      preserveAspectRatio="xMidYMid meet"
+      className="pointer-events-none"
+    >
+      {frag.parts.map((pp) => {
+        const va = vmap.get(pp.a);
+        const vb = vmap.get(pp.b);
+        if (!va || !vb) return null;
+        return (
+          <line
+            key={pp.id}
+            x1={va.x.toFixed(1)}
+            y1={va.y.toFixed(1)}
+            x2={vb.x.toFixed(1)}
+            y2={vb.y.toFixed(1)}
+            stroke={pp.type === "wire" ? "#8a93a3" : "#f59e0b"}
+            strokeWidth={pp.type === "wire" ? 5 : 12}
+            strokeLinecap="round"
+          />
+        );
+      })}
+      {frag.vertices.map((v) => (
+        <circle key={v.id} cx={v.x.toFixed(1)} cy={v.y.toFixed(1)} r={8} fill="#c8cfda" />
+      ))}
+    </svg>
+  );
+}
+
+function previewPart(type: PartType): Part {
+  const part: Part = { id: `prev-${type}`, a: "_a", b: "_b", ...blankPart(type) };
+  part.closed = true; // previews look best conducting
+  return part;
+}
 
 interface CircuitLabProps {
   // the circuit that loads on mount and on "Reset"
@@ -155,7 +200,7 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
   const [vertexMenu, setVertexMenu] = useState<string | null>(null);
   // "select" lets you grab and rewire parts; "hand" only moves the view,
   // so you can't knock your circuit apart by accident
-  const [toolMode, setToolMode] = useState<"select" | "hand">("hand");
+  const toolMode = "hand" as "select" | "hand"; // one mode: parts drag directly, empty board moves the view
   // which story the moving dots tell: Franklin's current or the real electrons
   const [electronView, setElectronView] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -165,6 +210,9 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
   // while the window is being resized, cover the canvas with the last good
   // frame + a spinner instead of letting the user watch it stutter
   const [resizeSnap, setResizeSnap] = useState<string | null>(null);
+
+  const [showSettings, setShowSettings] = useState(false);
+  const [showLaptop, setShowLaptop] = useState(false);
   const resizeTimerRef = useRef<number | null>(null);
   const infoTimerRef = useRef<number | null>(null);
   const showInfo = useCallback((text: string) => {
@@ -181,7 +229,9 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
 
   const selectedRef = useRef(selectedId);
   selectedRef.current = selectedId;
-  const soundOnRef = useRef(true); // sound is always on — speakers just work
+  const [soundOn, setSoundOn] = useState(true);
+  const soundOnRef = useRef(true);
+  soundOnRef.current = soundOn;
 
   // undo: snapshots taken before every board-changing action
   const historyRef = useRef<string[]>([]);
@@ -203,12 +253,6 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
     } catch {}
   }, []);
 
-
-  const previews = useMemo(() => {
-    const m = new Map<PartType, Part>();
-    for (const group of TOOLBOX) for (const t of group.items) m.set(t, previewPart(t));
-    return m;
-  }, []);
 
   // ——— audio ———
 
@@ -661,9 +705,13 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
           cam.ty += (ay - cam.ty) * pull;
         }
       } else {
-        // zooming out settles back over the center of the table
-        cam.tx += (BENCH.cx - cam.tx) * (1 - 1 / f);
-        cam.ty += (BENCH.cy - cam.ty) * (1 - 1 / f);
+        // zooming out: keep looking at what you were working on until you're
+        // properly high up — only then drift home over the table's center
+        const homing = clamp((cam.dist - 6500) / 6500, 0, 1);
+        if (homing > 0) {
+          cam.tx += (BENCH.cx - cam.tx) * (1 - 1 / f) * homing;
+          cam.ty += (BENCH.cy - cam.ty) * (1 - 1 / f) * homing;
+        }
       }
       clampCam();
     };
@@ -801,28 +849,6 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
       clampCam();
       return;
     }
-    if (drag.kind === "gizmo") {
-      const wPrev = toWorld({ clientX: drag.lastX, clientY: drag.lastY });
-      const wNow = toWorld(e);
-      const dx = drag.axis === "z" ? 0 : wNow.x - wPrev.x;
-      const dy = drag.axis === "x" ? 0 : wNow.y - wPrev.y;
-      drag.lastX = e.clientX;
-      drag.lastY = e.clientY;
-      const gp = circ.parts.find((pp) => pp.id === drag.partId);
-      if (gp) {
-        const seen = new Set<string>();
-        for (const vid of [gp.a, gp.b]) {
-          if (seen.has(vid)) continue;
-          seen.add(vid);
-          const v = vertexById(circ, vid);
-          if (v) {
-            v.x += dx;
-            v.y += dy;
-          }
-        }
-      }
-      return;
-    }
     if (drag.kind === "group") {
       // both rays from the same camera — an honest delta while the camera eases
       const wPrev = toWorld({ clientX: drag.lastX, clientY: drag.lastY });
@@ -886,13 +912,19 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
       drag.moved += Math.abs(x - v.x) + Math.abs(y - v.y);
       v.x = x;
       v.y = y;
-      enforceLengths(circ, new Set([v.id]));
+      // the iron rule of joint-dragging: every OTHER joint is bolted down.
+      // Wires stretch, rigid parts pivot the dragged end around their far
+      // joint — but no second joint ever moves.
+      const everyOther = new Set<string>();
+      for (const vv of circ.vertices) if (vv.id !== v.id) everyOther.add(vv.id);
+      enforceLengths(circ, everyOther);
       const target = findSnapTarget(circ, v);
       snapHintRef.current = target?.id ?? null;
       // soldering: hovering a dot on another dot starts the fuse timer
       if (target) {
         if (drag.holdTargetId !== target.id) {
           drag.holdTargetId = target.id;
+           
           drag.holdStart = performance.now();
         }
       } else {
@@ -907,7 +939,7 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
     dragRef.current = null;
     snapHintRef.current = null;
     if (!drag || drag.kind === "orbit" || drag.kind === "pan") return;
-    if (drag.kind === "group" || drag.kind === "gizmo") {
+    if (drag.kind === "group") {
       clampAll(circuitRef.current);
       enforceLengths(circuitRef.current, new Set());
       return;
@@ -1117,24 +1149,9 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
         }
         return;
       }
-      if (pk.kind === "gizmo") {
-        const selId = uiRef.current.selectedId;
-        if (selId) {
-          pushHistory();
-          dragRef.current = { kind: "gizmo", axis: pk.axis, partId: selId, lastX: e.clientX, lastY: e.clientY };
-        }
-        return;
-      }
-      // from far away the bench is a diorama — get close to touch it
-      if ((pk.kind === "vertex" || pk.kind === "part") && camRef.current.dist > 4500) {
-        if (pk.kind === "part") {
-          const part = circ.parts.find((p) => p.id === pk.partId);
-          if (part) {
-            setSelectedId(part.id);
-            setSelectedIds([part.id]);
-          }
-        }
-        showInfo("Zoom in closer to grab parts.");
+      if (pk.kind === "action") {
+        if (pk.action === "guide") onHelp?.();
+        if (pk.action === "laptop") setShowLaptop(true);
         return;
       }
       // parts and their end-dots always drag directly, whatever the tool mode
@@ -1481,6 +1498,12 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
   }
   const microMat = microPart ? microMaterial(microPart.type) : null;
 
+  const previews = useMemo(() => {
+    const m = new Map<PartType, Part>();
+    for (const group of TOOLBOX) for (const t of group.items) m.set(t, previewPart(t));
+    return m;
+  }, []);
+
   return (
     <div
       className="h-full w-full flex flex-col bg-[var(--bg)] text-[var(--ink)] select-none overflow-hidden"
@@ -1488,79 +1511,16 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
     >
       {/* phone-width: the shelf tucks under the board instead of beside it */}
       <div className="flex flex-1 min-h-0 flex-col-reverse sm:flex-row">
-        {/* toolbox: single parts first, big builds at the bottom */}
         <aside className="w-full h-52 border-t sm:w-44 md:w-56 sm:h-auto sm:border-t-0 sm:border-r p-2 shrink-0 overflow-y-auto border-[var(--line)] bg-[var(--panel)]">
-          <button
-            className={`${toolMode === "select" ? "btn btn-primary" : "btn"} mb-3 w-full justify-center`}
-            aria-pressed={toolMode === "select"}
-            title="When on: click and drag parts, pull connections apart, rewire. When off: dragging just moves the view."
-            onClick={() => setToolMode((m) => (m === "select" ? "hand" : "select"))}
-          >
-            {toolMode === "select" ? "Select & drag: ON" : "Select & drag"}
-          </button>
-          <div className="seg mb-2 w-full" role="group" aria-label="What the moving dots show">
-            <button
-              className="flex-1"
-              aria-pressed={!electronView}
-              title="Current flowing + to − : the direction Ben Franklin decided on, 250 years before anyone found the electron"
-              onClick={() => {
-                setElectronView(false);
-                if (!circuitRef.current.parts.some((p) => Math.abs(p.current) > 0.002))
-                  showInfo("No current is flowing yet — close a loop and the yellow dots will show it.");
-              }}
-            >
-              Show current
-            </button>
-            <button
-              className="flex-1"
-              aria-pressed={electronView}
-              title="The electrons themselves — they really drift the OTHER way, against Franklin's arrow. Both views are correct physics."
-              onClick={() => {
-                setElectronView(true);
-                if (!circuitRef.current.parts.some((p) => Math.abs(p.current) > 0.002))
-                  showInfo("No current is flowing yet — close a loop and the blue electron dots will drift (the real way: − to +).");
-              }}
-            >
-              Show electrons
-            </button>
-          </div>
-          <div className="seg mb-2 w-full" role="group" aria-label="Which readouts to show">
-            <button
-              className="flex-1"
-              aria-pressed={showAmps}
-              title="X-ray: show live amps on every part without a meter (off = measure with real ammeters, like a real bench)"
-              onClick={() => setShowAmps((v) => !v)}
-            >
-              {showAmps ? "Amps: on" : "Amps: off"}
-            </button>
-            <button
-              className="flex-1"
-              aria-pressed={showLabels}
-              title="Show or hide the info labels (ohms, volts, magnet numbers, …)"
-              onClick={() => setShowLabels((v) => !v)}
-            >
-              {showLabels ? "Labels: on" : "Labels: off"}
-            </button>
-          </div>
-          <button className="btn w-full justify-center mb-3" title="Undo (or press Cmd/Ctrl+Z)" onClick={undo}>
-            Undo
-          </button>
           {TOOLBOX.map((group) => (
             <div key={group.title} className="mb-3">
-              <h4 className="text-[10px] uppercase tracking-widest text-[var(--ink-3)] px-1.5 mb-1">
-                {group.title}
-              </h4>
+              <h4 className="text-[10px] uppercase tracking-widest text-[var(--ink-3)] px-1.5 mb-1">{group.title}</h4>
               <div className="flex flex-col gap-0.5">
                 {group.items.map((type) => {
                   const def = CATALOG[type];
                   const prev = previews.get(type)!;
                   return (
-                    <button
-                      key={type}
-                      className="tool-item"
-                      onPointerDown={(e) => spawnFromToolbox(type, e)}
-                      title={def.hint}
-                    >
+                    <button key={type} className="tool-item" onPointerDown={(e) => spawnFromToolbox(type, e)} title={def.hint}>
                       <svg
                         width="100%"
                         height="32"
@@ -1570,12 +1530,8 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
                       >
                         <Glyph p={prev} L={def.len} />
                       </svg>
-                      <div className="text-[11px] font-medium text-[var(--ink-2)] leading-tight">
-                        {def.label}
-                      </div>
-                      <div className="text-[10px] text-[var(--ink-3)] leading-tight hidden md:block">
-                        {def.hint}
-                      </div>
+                      <div className="text-[11px] font-medium text-[var(--ink-2)] leading-tight">{def.label}</div>
+                      <div className="text-[10px] text-[var(--ink-3)] leading-tight hidden md:block">{def.hint}</div>
                     </button>
                   );
                 })}
@@ -1595,12 +1551,8 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
                   title={`${m.blurb} Drag it onto the board.`}
                 >
                   <ModelPreview model={m} />
-                  <div className="text-[11px] font-medium text-[var(--ink-2)] leading-tight">
-                    {m.title}
-                  </div>
-                  <div className="text-[10px] text-[var(--ink-3)] leading-tight hidden md:block">
-                    {m.blurb}
-                  </div>
+                  <div className="text-[11px] font-medium text-[var(--ink-2)] leading-tight">{m.title}</div>
+                  <div className="text-[10px] text-[var(--ink-3)] leading-tight hidden md:block">{m.blurb}</div>
                 </button>
               ))}
             </div>
@@ -1768,21 +1720,30 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
                 className="absolute z-20 -translate-x-1/2 border border-[var(--line)] bg-[var(--panel)] p-2 shadow-2xl"
                 style={{ left: sx, top: sy - 62 }}
               >
-                <div className="text-[11px] text-[var(--ink-3)] px-1 pb-1.5">
-                  {n} parts joined here
+                <div className="text-[11px] text-[var(--ink-3)] px-1 pb-1.5 text-center">
+                  {n} things joined at this connector
                 </div>
-                <div className="flex gap-1.5">
+                <div className="flex gap-1.5 justify-center">
                   <button
                     className="btn"
+                    style={{ color: "var(--accent)" }}
+                    title="Keep everything soldered together"
+                    aria-label="Keep joined"
+                    onClick={() => setVertexMenu(null)}
+                  >
+                    ✓ Keep
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    title="Delete this connector — every wire and part attached here comes loose"
+                    aria-label="Delete connector and unattach everything"
                     onClick={() => {
                       splitVertex(v.id);
                       setVertexMenu(null);
+                      showInfo("Connector deleted — the ends are loose again. Drag them wherever you like.");
                     }}
                   >
-                    Pull apart
-                  </button>
-                  <button className="btn" style={{ border: "none" }} onClick={() => setVertexMenu(null)}>
-                    Cancel
+                    ✕ Delete — unattach all
                   </button>
                 </div>
               </div>
@@ -1878,15 +1839,48 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
             />
           </div>
 
-          {onHelp && (
-            <button
-              className="absolute top-3 left-3 z-10 h-[34px] border border-[var(--line)] bg-[var(--panel)] px-3 text-[var(--ink-2)] hover:text-[var(--ink)] hover:bg-[var(--panel-2)] transition-colors text-[13px] font-semibold leading-none"
-              title="How it all works — units, equations, and what each part does"
-              aria-label="Open the guide"
-              onClick={onHelp}
+
+          <button
+            className="absolute top-3 right-3 z-10 border border-[var(--line)] bg-[var(--panel)] p-2 text-[var(--ink-3)] hover:text-[var(--ink)] hover:bg-[var(--panel-2)] transition-colors"
+            title="Clear the whole board"
+            aria-label="Clear the whole board"
+            onClick={clearBoard}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
+              <path d="M2.5 4h11 M6.5 4V2.5h3V4 M4 4l.8 9.5a1 1 0 0 0 1 .9h4.4a1 1 0 0 0 1-.9L12 4 M6.5 6.8v4.7 M9.5 6.8v4.7" />
+            </svg>
+          </button>
+
+          {showLaptop && (
+            <div
+              className="absolute top-14 left-1/2 -translate-x-1/2 z-30 w-[380px] max-w-[92%] max-h-[75%] overflow-y-auto border border-[var(--line)] p-3 text-sm"
+              style={{ background: "color-mix(in oklab, var(--panel) 92%, transparent)", backdropFilter: "blur(4px)" }}
             >
-              Guide
-            </button>
+              <div className="flex items-center mb-2">
+                <span className="font-semibold text-[var(--ink)]">The shop laptop</span>
+                <div className="flex-1" />
+                <button className="btn" style={{ border: "none" }} onClick={() => setShowLaptop(false)} aria-label="Close">
+                  ✕
+                </button>
+              </div>
+              {circ.parts.filter((pp) => pp.type === "chip").length === 0 ? (
+                <p className="text-[12.5px] text-[var(--ink-2)]">
+                  No microchips on the bench. Drag a <b>Microchip</b> in from the shelf, wire its two pins
+                  into a powered loop, and come back here to program it.
+                </p>
+              ) : (
+                circ.parts
+                  .filter((pp) => pp.type === "chip")
+                  .map((chipPart, i) => (
+                    <div key={chipPart.id} className="mb-3 pb-3 border-b border-[var(--line)] last:border-b-0">
+                      <p className="text-[11px] uppercase tracking-widest text-[var(--ink-3)] mb-1">
+                        Microchip {i + 1}
+                      </p>
+                      <ChipEditor part={chipPart} />
+                    </div>
+                  ))
+              )}
+            </div>
           )}
 
           {resizeSnap !== null && (
@@ -1913,17 +1907,96 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
             }}
           />
 
-          {/* the trash can: clears the whole board */}
+          {/* the corner row: undo · settings · trash */}
           <button
-            className="absolute top-3 right-3 z-10 border border-[var(--line)] bg-[var(--panel)] p-2 text-[var(--ink-3)] hover:text-[var(--ink)] hover:bg-[var(--panel-2)] transition-colors"
-            title="Clear the whole board"
-            aria-label="Clear the whole board"
-            onClick={clearBoard}
+            className="absolute top-3 right-21 z-10 border border-[var(--line)] bg-[var(--panel)] p-2 text-[var(--ink-3)] hover:text-[var(--ink)] hover:bg-[var(--panel-2)] transition-colors"
+            title="Undo (or press Cmd/Ctrl+Z)"
+            aria-label="Undo"
+            onClick={undo}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <path d="M2.5 4h11 M6.5 4V2.5h3V4 M4 4l.8 9.5a1 1 0 0 0 1 .9h4.4a1 1 0 0 0 1-.9L12 4 M6.5 6.8v4.7 M9.5 6.8v4.7" />
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M6.5 3 3 6.5 6.5 10" />
+              <path d="M3 6.5h6a4 4 0 0 1 0 8H7" />
             </svg>
           </button>
+          <button
+            className="absolute top-3 right-12 z-10 border border-[var(--line)] bg-[var(--panel)] p-2 text-[var(--ink-3)] hover:text-[var(--ink)] hover:bg-[var(--panel-2)] transition-colors"
+            title="View settings: current vs electrons, amps, labels"
+            aria-label="View settings"
+            aria-expanded={showSettings}
+            onClick={() => setShowSettings((v) => !v)}
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <circle cx="12" cy="12" r="3.2" />
+              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1.02-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.56 1.02H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.03z" />
+            </svg>
+          </button>
+
+          {showSettings && (
+            <div
+              className="absolute top-14 right-3 z-30 w-64 border border-[var(--line)] p-2.5 text-sm"
+              style={{ background: "color-mix(in oklab, var(--panel) 88%, transparent)", backdropFilter: "blur(4px)" }}
+            >
+              <div className="seg mb-2 w-full" role="group" aria-label="What the moving dots show">
+                <button
+                  className="flex-1"
+                  aria-pressed={!electronView}
+                  title="Current flowing + to − : the direction Ben Franklin decided on"
+                  onClick={() => {
+                    setElectronView(false);
+                    if (!circuitRef.current.parts.some((p) => Math.abs(p.current) > 0.002))
+                      showInfo("No current is flowing yet — close a loop and the yellow dots will show it.");
+                  }}
+                >
+                  Show current
+                </button>
+                <button
+                  className="flex-1"
+                  aria-pressed={electronView}
+                  title="The electrons themselves — they really drift the OTHER way"
+                  onClick={() => {
+                    setElectronView(true);
+                    if (!circuitRef.current.parts.some((p) => Math.abs(p.current) > 0.002))
+                      showInfo("No current is flowing yet — close a loop and the blue electron dots will drift (the real way: − to +).");
+                  }}
+                >
+                  Show electrons
+                </button>
+              </div>
+              <div className="seg mb-2 w-full" role="group" aria-label="Which readouts to show">
+                <button
+                  className="flex-1"
+                  aria-pressed={showAmps}
+                  title="X-ray: live amps on every part without a meter"
+                  onClick={() => setShowAmps((v) => !v)}
+                >
+                  {showAmps ? "Amps: on" : "Amps: off"}
+                </button>
+                <button
+                  className="flex-1"
+                  aria-pressed={showLabels}
+                  title="Show or hide the info labels (ohms, volts, magnet numbers, …)"
+                  onClick={() => setShowLabels((v) => !v)}
+                >
+                  {showLabels ? "Labels: on" : "Labels: off"}
+                </button>
+              </div>
+              <div className="seg w-full" role="group" aria-label="Sound">
+                <button
+                  className="flex-1"
+                  aria-pressed={soundOn}
+                  title="Speakers, buzzers, sparks and booms"
+                  onClick={() => setSoundOn(true)}
+                >
+                  Sound: on
+                </button>
+                <button className="flex-1" aria-pressed={!soundOn} onClick={() => setSoundOn(false)}>
+                  Sound: off
+                </button>
+              </div>
+            </div>
+          )}
+
 
           {circ.parts.length === 0 && (
             <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
@@ -1934,7 +2007,7 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
             </div>
           )}
 
-          {selected && (
+          {selected && selected.type !== "wire" && (
             <Inspector
               part={selected}
               onDelete={() => deletePart(selected.id)}
@@ -1953,43 +2026,3 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
   );
 }
 
-// a miniature wiring diagram of a ready-made build, drawn from its real parts
-function ModelPreview({ model }: { model: Model }) {
-  const { frag, viewBox } = useMemo(() => {
-    const frag = model.build(0, 0);
-    let x0 = Infinity,
-      y0 = Infinity,
-      x1 = -Infinity,
-      y1 = -Infinity;
-    for (const v of frag.vertices) {
-      x0 = Math.min(x0, v.x);
-      y0 = Math.min(y0, v.y);
-      x1 = Math.max(x1, v.x);
-      y1 = Math.max(y1, v.y);
-    }
-    const pad = 40;
-    return {
-      frag,
-      viewBox: `${x0 - pad} ${y0 - pad} ${x1 - x0 + pad * 2} ${y1 - y0 + pad * 2}`,
-    };
-  }, [model]);
-  const vmap = new Map(frag.vertices.map((v) => [v.id, v]));
-  return (
-    <svg width="100%" height="52" viewBox={viewBox} preserveAspectRatio="xMidYMid meet" className="pointer-events-none">
-      {frag.parts.map((p) => {
-        const va = vmap.get(p.a);
-        const vb = vmap.get(p.b);
-        if (!va || !vb) return null;
-        const L = Math.max(4, Math.hypot(vb.x - va.x, vb.y - va.y));
-        const angle = (Math.atan2(vb.y - va.y, vb.x - va.x) * 180) / Math.PI;
-        // fixed precision: server and client can disagree on atan2's last
-        // decimal, which breaks hydration of these server-rendered previews
-        return (
-          <g key={p.id} transform={`translate(${va.x.toFixed(1)} ${va.y.toFixed(1)}) rotate(${angle.toFixed(2)})`}>
-            <Glyph p={p} L={L} angle={angle} />
-          </g>
-        );
-      })}
-    </svg>
-  );
-}

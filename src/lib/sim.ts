@@ -24,6 +24,17 @@ export type PartType =
   | "calculator"
   | "chip"
   | "usbc"
+  | "pot"
+  | "breadboard"
+  | "zener"
+  | "neon"
+  | "ptc"
+  | "rgbled"
+  | "tiltswitch"
+  | "servo"
+  | "ultrasonic"
+  | "pir"
+  | "soundsensor"
   | "memory"
   | "motor"
   | "coil"
@@ -494,6 +505,129 @@ export const CATALOG: Record<PartType, PartDef> = {
     heatMass: 40,
     explodeAt: 380,
   },
+  breadboard: {
+    label: "Breadboard",
+    hint: "The classic prototyping board. Drag it anywhere and build on top of it — its plastic body doesn't conduct.",
+    len: 320,
+    rigid: true,
+    category: "Build",
+    resistance: 1e9,
+    heatK: 1,
+    heatMass: 500,
+    explodeAt: 5000,
+  },
+  zener: {
+    label: "Zener diode",
+    hint: "A diode with a secret: push it BACKWARD hard enough (about 5 volts) and it conducts anyway, at exactly that voltage. Engineers use it as a voltage guard.",
+    len: 110,
+    rigid: true,
+    category: "Build",
+    resistance: 999,
+    heatK: 1,
+    heatMass: 25,
+    explodeAt: 300,
+  },
+  neon: {
+    label: "Neon lamp",
+    hint: "A little glass bulb of orange gas. Dead below about 65 volts — then the gas ignites and it glows. Crank a battery to 120 to wake it.",
+    len: 110,
+    rigid: true,
+    category: "Build",
+    resistance: 999,
+    heatK: 1,
+    heatMass: 30,
+    explodeAt: 500,
+  },
+  ptc: {
+    label: "Resettable fuse",
+    hint: "A fuse that heals: too much current makes it hot, heat makes it resist, and the current chokes off. Let it cool and it works again.",
+    len: 110,
+    rigid: true,
+    category: "Build",
+    resistance: 2,
+    heatK: 0.7,
+    heatMass: 25,
+    explodeAt: 5000,
+  },
+  pot: {
+    label: "Potentiometer",
+    hint: "A resistor with a knob. Twist the slider and the resistance sweeps from almost nothing to a lot.",
+    len: 110,
+    rigid: true,
+    category: "Build",
+    resistance: 250,
+    minR: 1,
+    maxR: 5000,
+    heatK: 1,
+    heatMass: 60,
+    explodeAt: 420,
+  },
+  rgbled: {
+    label: "RGB LED",
+    hint: "One LED, every color: its shade sweeps with how hard you push current through it.",
+    len: 110,
+    rigid: true,
+    category: "Build",
+    resistance: 999,
+    heatK: 1,
+    heatMass: 25,
+    explodeAt: 260,
+  },
+  tiltswitch: {
+    label: "Tilt switch",
+    hint: "A tube with a metal ball inside. Level = off. Drag one end up or down to tilt it and the ball rolls onto the contacts.",
+    len: 110,
+    rigid: true,
+    category: "Inputs & sound",
+    resistance: 0.4,
+    heatK: 1,
+    heatMass: 40,
+    explodeAt: 380,
+  },
+  servo: {
+    label: "Servo",
+    hint: "A motor that swings an arm to an angle instead of spinning — more volts, bigger swing.",
+    len: 110,
+    rigid: true,
+    category: "Build",
+    resistance: 14,
+    heatK: 0.6,
+    heatMass: 55,
+    explodeAt: 420,
+  },
+  ultrasonic: {
+    label: "Distance sensor",
+    hint: "Two little sonar eyes. The closer any other part sits to it, the better it conducts. Park something near it and watch.",
+    len: 110,
+    rigid: true,
+    category: "Logic & sensors",
+    resistance: 100000,
+    heatK: 1,
+    heatMass: 40,
+    explodeAt: 380,
+  },
+  pir: {
+    label: "Motion sensor",
+    hint: "Sees movement, not things. Conducts for a moment whenever something MOVES nearby, then goes quiet again.",
+    len: 110,
+    rigid: true,
+    category: "Logic & sensors",
+    resistance: 100000,
+    heatK: 1,
+    heatMass: 40,
+    explodeAt: 380,
+  },
+  soundsensor: {
+    label: "Sound sensor",
+    hint: "A little microphone. Conducts while something nearby is making noise — speakers, buzzers, the talking machine.",
+    len: 110,
+    rigid: true,
+    category: "Logic & sensors",
+    resistance: 100000,
+    heatK: 1,
+    heatMass: 40,
+    explodeAt: 380,
+  },
   memory: {
     label: "Memory",
     hint: "Stores one number and shows it. Each fresh pulse of current adds one — and it remembers with the power off.",
@@ -636,6 +770,8 @@ export interface Circuit {
   parts: Part[];
 }
 
+const pirPrev = new Map<string, { x: number; y: number }>();
+
 let nextId = 1;
 export function uid(prefix: string): string {
   return `${prefix}${nextId++}`;
@@ -754,6 +890,17 @@ function modelFor(p: Part, dt: number): Model | null {
       const g = p.capacitance / Math.max(dt, 1 / 240);
       return { g, emf: -p.capV };
     }
+    case "zener":
+      if (p.ledOn) return { g: 1 / DIODE_ON_R, emf: -0.7 };
+      if (p.engaged) return { g: 1 / DIODE_ON_R, emf: 5.1 };
+      return { g: 1e-7, emf: 0 };
+    case "neon":
+      if (p.ledOn) return { g: 1 / 400, emf: -55 };
+      if (p.engaged) return { g: 1 / 400, emf: 55 };
+      return { g: 1e-7, emf: 0 };
+    case "tiltswitch":
+      return p.closed ? { g: 1 / p.resistance, emf: 0 } : null;
+    case "rgbled":
     case "led":
       // off-state leak (10 MΩ) is deliberately much bigger than GMIN so a
       // dead-ended LED's floating node follows its neighbor instead of the
@@ -849,6 +996,16 @@ export interface StepEvents {
 export function stepCircuit(circ: Circuit, dt: number): StepEvents {
   const events: StepEvents = { exploded: [], fusesBlown: [] };
 
+  // tilt switches read their own slope: level = open, tilted = the ball rolls on
+  for (const p of circ.parts) {
+    if (p.type !== "tiltswitch" || p.destroyed) continue;
+    const a = vertexById(circ, p.a);
+    const b = vertexById(circ, p.b);
+    if (!a || !b) continue;
+    const run = Math.hypot(b.x - a.x, b.y - a.y);
+    p.closed = run > 1 && Math.abs(b.y - a.y) > 0.42 * run;
+  }
+
   // advance blinker clocks before solving so their state is current
   for (const p of circ.parts) {
     if (p.type === "blinker") p.phase += dt;
@@ -876,7 +1033,17 @@ export function stepCircuit(circ: Circuit, dt: number): StepEvents {
 
   // Sensors and solar panels react to last frame's light and heat, falling
   // off with distance squared — put them CLOSE to what they should watch.
-  if (circ.parts.some((p) => p.type === "lightsensor" || p.type === "heatsensor" || p.type === "solar")) {
+  if (
+    circ.parts.some(
+      (p) =>
+        p.type === "lightsensor" ||
+        p.type === "heatsensor" ||
+        p.type === "solar" ||
+        p.type === "ultrasonic" ||
+        p.type === "pir" ||
+        p.type === "soundsensor"
+    )
+  ) {
     const vpos = new Map<string, Vertex>();
     for (const v of circ.vertices) vpos.set(v.id, v);
     const mid = (p: Part) => {
@@ -884,6 +1051,20 @@ export function stepCircuit(circ: Circuit, dt: number): StepEvents {
       const b = vpos.get(p.b);
       return a && b ? { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 } : null;
     };
+    // which connected machine does each vertex belong to? (sonar must not
+    // "detect" the wires of its own circuit)
+    const compRoot = new Map<string, string>();
+    const find = (v: string): string => {
+      let r = v;
+      while (compRoot.get(r) !== undefined && compRoot.get(r) !== r) r = compRoot.get(r)!;
+      compRoot.set(v, r);
+      return r;
+    };
+    for (const p of circ.parts) {
+      const ra = find(compRoot.has(p.a) ? p.a : (compRoot.set(p.a, p.a), p.a));
+      const rb = find(compRoot.has(p.b) ? p.b : (compRoot.set(p.b, p.b), p.b));
+      if (ra !== rb) compRoot.set(ra, rb);
+    }
     const lights: { x: number; y: number; b: number }[] = [];
     const heats: { x: number; y: number; w: number }[] = [];
     for (const p of circ.parts) {
@@ -893,7 +1074,7 @@ export function stepCircuit(circ: Circuit, dt: number): StepEvents {
       if (p.type === "bulb") {
         const b = Math.min(1, Math.abs(p.current * p.volts) / 40);
         if (b > 0.02) lights.push({ x: m.x, y: m.y, b });
-      } else if (p.type === "led" && p.ledOn) {
+      } else if ((p.type === "led" || p.type === "rgbled") && p.ledOn) {
         const b = Math.min(1, Math.abs(p.current) / 0.1) * 0.6;
         if (b > 0.02) lights.push({ x: m.x, y: m.y, b });
       }
@@ -922,7 +1103,54 @@ export function stepCircuit(circ: Circuit, dt: number): StepEvents {
         const f = warm / (warm + 80);
         p.sense = f;
         p.resistance = Math.pow(10, 5.5 - 5 * f);
+      } else if (p.type === "ultrasonic") {
+        // sonar: how close is the nearest OTHER part?
+        let dmin = Infinity;
+        const myComp = find(p.a);
+        for (const q of circ.parts) {
+          if (q.id === p.id || q.destroyed) continue;
+          if (find(q.a) === myComp) continue; // its own circuit isn't an obstacle
+          const qm = mid(q);
+          if (!qm) continue;
+          dmin = Math.min(dmin, Math.hypot(qm.x - m.x, qm.y - m.y));
+        }
+        const f = Math.max(0, Math.min(1, (520 - dmin) / 440));
+        p.sense = f;
+        p.resistance = Math.pow(10, 6 - 5.5 * f);
+      } else if (p.type === "soundsensor") {
+        let loud = 0;
+        for (const q of circ.parts) {
+          if (q.destroyed) continue;
+          if (q.type !== "speaker" && q.type !== "buzzer" && q.type !== "voicebox") continue;
+          if (Math.abs(q.current) < 0.02) continue;
+          const qm = mid(q);
+          if (!qm) continue;
+          const d2 = Math.max((qm.x - m.x) ** 2 + (qm.y - m.y) ** 2, 1600);
+          loud += (Math.min(1, Math.abs(q.current) * 6) * 240000) / d2;
+        }
+        const f = loud / (loud + 0.8);
+        p.sense = f;
+        p.resistance = Math.pow(10, 6 - 5.5 * f);
+      } else if (p.type === "pir") {
+        // motion: did any vertex near it move since the last frame?
+        let moved = false;
+        for (const v of circ.vertices) {
+          const prev = pirPrev.get(v.id);
+          if (prev && Math.hypot(v.x - prev.x, v.y - prev.y) > 1.5) {
+            if (Math.hypot(v.x - m.x, v.y - m.y) < 420) {
+              moved = true;
+              break;
+            }
+          }
+        }
+        if (moved) p.phase = 1.4; // hold the trigger for a beat
+        else p.phase = Math.max(0, p.phase - dt);
+        p.sense = p.phase > 0 ? 1 : 0;
+        p.resistance = p.phase > 0 ? 2 : 1000000;
       }
+    }
+    if (circ.parts.some((p) => p.type === "pir")) {
+      for (const v of circ.vertices) pirPrev.set(v.id, { x: v.x, y: v.y });
     }
   }
 
@@ -933,7 +1161,21 @@ export function stepCircuit(circ: Circuit, dt: number): StepEvents {
     volts = solveOnce(circ, dt);
     let changed = false;
     for (const p of circ.parts) {
-      if ((p.type !== "led" && p.type !== "diode") || p.destroyed) continue;
+      if (p.destroyed) continue;
+      if (p.type === "zener" || p.type === "neon") {
+        const v = (volts.get(p.a) ?? 0) - (volts.get(p.b) ?? 0);
+        const fwdAt = p.type === "zener" ? 0.65 : 63;
+        const revAt = p.type === "zener" ? 5.05 : 63;
+        const wantFwd = v > fwdAt && !p.engaged;
+        const wantRev = v < -revAt && !p.ledOn;
+        if (wantFwd !== p.ledOn || wantRev !== p.engaged) {
+          p.ledOn = wantFwd;
+          p.engaged = wantRev;
+          changed = true;
+        }
+        continue;
+      }
+      if (p.type !== "led" && p.type !== "diode" && p.type !== "rgbled") continue;
       const v = (volts.get(p.a) ?? 0) - (volts.get(p.b) ?? 0);
       const drop = dropOf(p.type);
       if (p.ledOn) {
@@ -992,7 +1234,7 @@ export function stepCircuit(circ: Circuit, dt: number): StepEvents {
     else if (p.type === "outlet") watts = p.current * p.current * 0.02;
     else if (p.type === "usbc") watts = p.current * p.current * 0.1;
     else if (p.type === "solar") watts = p.current * p.current * 4;
-    else if (p.type === "led" || p.type === "diode") watts = Math.abs(p.current * p.volts) * 0.7;
+    else if (p.type === "led" || p.type === "diode" || p.type === "rgbled") watts = Math.abs(p.current * p.volts) * 0.7;
     else if (p.type === "capacitor" || p.type === "inductor") watts = 0;
     else if (m && m.g > 1e-8) watts = (p.current * p.current) / m.g;
     p.temp += ((watts - def.heatK * (p.temp - ROOM_TEMP)) * dt) / def.heatMass;
@@ -1015,6 +1257,13 @@ export function stepCircuit(circ: Circuit, dt: number): StepEvents {
     // Animation: moving dots, spinning rotors, hauling winches.
     const speed = Math.max(-170, Math.min(170, p.current * 40));
     p.flow += speed * dt;
+    if (p.type === "ptc" && !p.destroyed) {
+      p.resistance = 2 * (1 + Math.max(0, p.temp - 70) * 0.9);
+    }
+    if (p.type === "servo") {
+      const target = Math.max(-1, Math.min(1, p.volts / 9)) * Math.PI * 0.75;
+      p.spin += (target - p.spin) * Math.min(1, dt * 6);
+    }
     if (p.type === "motor" || p.type === "hairdryer") {
       p.spin += Math.max(-1600, Math.min(1600, p.current * 420)) * dt;
       if (p.type === "motor" && p.attachment === "winch") {

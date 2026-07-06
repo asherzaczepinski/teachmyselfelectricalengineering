@@ -145,17 +145,148 @@ export const MODELS: Model[] = [
     },
   },
   {
-    id: "tally",
-    title: "Tally counter",
-    blurb: "Press the button: the memory box adds one and keeps it — even after the power stops.",
+    id: "blink",
+    title: "Blink",
+    blurb: "The classic first Arduino project: the board runs off the laptop's USB lead and blinks an LED through magnetic channel 1. Click the chip (or the laptop) to edit its program.",
+    build: (cx, cy) => {
+      return rails(cx, cy, [-100, 130], -140, 140, -280, 9, (i, top, bot, V, P) => {
+        if (i === 0) {
+          const m = V(top.x, top.y + 100);
+          const c = V(top.x, top.y + 210);
+          P("switch", top, m, { closed: true });
+          P("chip", m, c, { text: "turn 1 on\nwait 0.5\nturn 1 off\nwait 0.5" });
+          P("wire", c, bot);
+        } else {
+          const m = V(top.x, top.y + 100);
+          const c = V(top.x, top.y + 195);
+          P("relay", top, m, { channel: 1 });
+          P("led", m, c, { color: "green" });
+          P("wire", c, bot);
+        }
+      });
+    },
+  },
+  {
+    id: "speech",
+    title: "Speech machine",
+    blurb: "The talking machine wired up for real: power, a switch, and a microphone branch that flickers a bulb whenever it speaks. Click the machine to change its words.",
+    build: (cx, cy) => {
+      return rails(cx, cy, [-90, 200], -140, 140, -280, 9, (i, top, bot, V, P) => {
+        if (i === 0) {
+          const m = V(top.x, top.y + 100);
+          const c = V(top.x, top.y + 210);
+          P("switch", top, m, { closed: true });
+          P("voicebox", m, c, { text: "hello" });
+          P("wire", c, bot);
+        } else {
+          const m = V(top.x, top.y + 100);
+          const c = V(top.x, top.y + 210);
+          P("soundsensor", top, m);
+          P("bulb", m, c);
+          P("wire", c, bot);
+        }
+      });
+    },
+  },
+  {
+    id: "colormixer",
+    title: "Color mixer",
+    blurb: "An RGB LED behind a potentiometer. Twist the knob: the current changes, and the color sweeps with it.",
     build: (cx, cy) => {
       return rails(cx, cy, [120], -140, 140, -140, 9, (_i, top, bot, V, P) => {
         const m = V(top.x, top.y + 100);
         const c = V(top.x, top.y + 210);
-        P("button", top, m, { key: "a" });
-        P("memory", m, c);
+        P("pot", top, m, { resistance: 60 });
+        P("rgbled", m, c);
         P("wire", c, bot);
       });
+    },
+  },
+  {
+    id: "parking",
+    title: "Parking sensor",
+    blurb: "Sonar wired to a buzzer: drag any spare part close to the two silver eyes and it starts to complain, just like a car bumper.",
+    build: (cx, cy) => {
+      return rails(cx, cy, [120], -140, 140, -140, 9, (_i, top, bot, V, P) => {
+        const m = V(top.x, top.y + 100);
+        const c = V(top.x, top.y + 210);
+        P("ultrasonic", top, m);
+        P("buzzer", m, c);
+        P("wire", c, bot);
+      });
+    },
+  },
+  {
+    id: "motionalarm",
+    title: "Motion alarm",
+    blurb: "A motion sensor guarding a buzzer. Drag anything past the little white dome and it shrieks for a second.",
+    build: (cx, cy) => {
+      return rails(cx, cy, [120], -140, 140, -140, 9, (_i, top, bot, V, P) => {
+        const m = V(top.x, top.y + 100);
+        const c = V(top.x, top.y + 210);
+        P("pir", top, m);
+        P("buzzer", m, c);
+        P("wire", c, bot);
+      });
+    },
+  },
+  {
+    id: "claplight",
+    title: "Clap light",
+    blurb: "Hold A to sound the buzzer — the microphone hears it and lights the bulb. A sound-activated lamp, built honest.",
+    build: (cx, cy) => {
+      return rails(cx, cy, [-80, 180], -140, 140, -260, 9, (i, top, bot, V, P) => {
+        if (i === 0) {
+          const m = V(top.x, top.y + 100);
+          const c = V(top.x, top.y + 210);
+          P("button", top, m, { key: "a" });
+          P("buzzer", m, c);
+          P("wire", c, bot);
+        } else {
+          const m = V(top.x, top.y + 100);
+          const c = V(top.x, top.y + 210);
+          P("soundsensor", top, m);
+          P("bulb", m, c);
+          P("wire", c, bot);
+        }
+      });
+    },
+  },
+  {
+    id: "servodial",
+    title: "Servo dial",
+    blurb: "A potentiometer steering a servo arm: twist the knob, the arm swings to match. That's RC steering in one loop.",
+    build: (cx, cy) => {
+      return rails(cx, cy, [120], -140, 140, -140, 9, (_i, top, bot, V, P) => {
+        const m = V(top.x, top.y + 100);
+        const c = V(top.x, top.y + 210);
+        P("pot", top, m, { resistance: 20 });
+        P("servo", m, c);
+        P("wire", c, bot);
+      });
+    },
+  },
+  {
+    id: "tiltalarm",
+    title: "Tilt alarm",
+    blurb: "A tilt switch and a buzzer. Level, it's silent. Drag one end of the tube up or down and the ball rolls on — and it screams.",
+    build: (cx, cy) => {
+      const { circ, V, P } = fragment();
+      const tl = V(cx - 165, cy - 110);
+      const tr = V(cx - 55, cy - 110);
+      const r1 = V(cx + 115, cy - 110);
+      const r2 = V(cx + 115, cy);
+      const b2 = V(cx + 55, cy + 110);
+      const b1 = V(cx - 55, cy + 110);
+      const l1 = V(cx - 165, cy);
+      P("tiltswitch", tl, tr); // lying level: quiet
+      P("wire", tr, r1);
+      P("buzzer", r1, r2);
+      P("wire", r2, b2);
+      P("battery", b1, b2, { voltage: 9 });
+      P("wire", b1, l1);
+      P("wire", l1, tl);
+      return circ;
     },
   },
   {
@@ -336,7 +467,7 @@ export const MODELS: Model[] = [
       P("heater", hm, hb);
       P("wire", hb, hc);
       P("wire", hc, hb1);
-      P("outlet", hb1, hb2);
+      P("battery", hb1, hb2, { voltage: 120 }); // a big supply — no wall outlets in this shop
       P("wire", hb2, hd);
       P("wire", hd, ha);
       // the alarm: heat sensor (parked ~70px from the heater) + coil branch,
