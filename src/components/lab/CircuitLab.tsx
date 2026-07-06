@@ -61,6 +61,7 @@ type Drag =
   | { kind: "marquee"; x0: number; y0: number; x1: number; y1: number }
   | { kind: "pan"; lastX: number; lastY: number }
   | { kind: "group"; lastX: number; lastY: number }
+  | { kind: "rotate"; midX: number; midY: number; grabA: number; orig: { id: string; x: number; y: number }[] }
   | { kind: "orbit"; lastX: number; lastY: number };
 
 const SOLDER_MS = 850; // hold a dot on a dot this long and it fuses
@@ -180,6 +181,7 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
     electronView: false,
     showAmps: false,
     showLabels: true,
+    shelfOpen: false,
   });
   const particlesRef = useRef<Particle[]>([]);
   const clockRef = useRef(0); // animation clock for the microscope view
@@ -190,13 +192,10 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
     voices: new Map(),
     sparkGain: null,
   });
-  const volumeToastShownRef = useRef(false);
-  const lastVolWarnRef = useRef(0);
   const momentumRef = useRef({ vx: 0, vy: 0, vaz: 0, vpol: 0 });
 
   const [, setFrame] = useState(0);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [volumeToast, setVolumeToast] = useState(false);
   const [vertexMenu, setVertexMenu] = useState<string | null>(null);
   // "select" lets you grab and rewire parts; "hand" only moves the view,
   // so you can't knock your circuit apart by accident
@@ -213,6 +212,8 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
 
   const [showSettings, setShowSettings] = useState(false);
   const [showLaptop, setShowLaptop] = useState(false);
+  const [showShelf, setShowShelf] = useState(false);
+  const [nukeAsk, setNukeAsk] = useState(false);
   const resizeTimerRef = useRef<number | null>(null);
   const infoTimerRef = useRef<number | null>(null);
   const showInfo = useCallback((text: string) => {
@@ -235,9 +236,11 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
 
   // undo: snapshots taken before every board-changing action
   const historyRef = useRef<string[]>([]);
+  const redoRef = useRef<string[]>([]);
   const pushHistory = useCallback(() => {
     const snap = JSON.stringify(circuitRef.current);
     const h = historyRef.current;
+    redoRef.current = []; // a fresh edit erases the redo future
     if (h[h.length - 1] === snap) return;
     h.push(snap);
     if (h.length > 60) h.shift();
@@ -246,6 +249,19 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
     const raw = historyRef.current.pop();
     if (!raw) return;
     try {
+      redoRef.current.push(JSON.stringify(circuitRef.current));
+      circuitRef.current = JSON.parse(raw) as Circuit;
+      particlesRef.current = [];
+      setSelectedId(null);
+      setVertexMenu(null);
+    } catch {}
+  }, []);
+
+  const redo = useCallback(() => {
+    const raw = redoRef.current.pop();
+    if (!raw) return;
+    try {
+      historyRef.current.push(JSON.stringify(circuitRef.current));
       circuitRef.current = JSON.parse(raw) as Circuit;
       particlesRef.current = [];
       setSelectedId(null);
@@ -311,7 +327,6 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
 
     // speakers and buzzers share one oscillator-per-part pattern
     const alive = new Set<string>();
-    let anyAudible = false;
     for (const p of circuitRef.current.parts) {
       if ((p.type !== "speaker" && p.type !== "buzzer") || p.destroyed) continue;
       alive.add(p.id);
@@ -328,7 +343,6 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
         a.speakers.set(p.id, node);
       }
       const amps = Math.abs(p.current);
-      if (amps > 0.02) anyAudible = true;
       const vol = soundOnRef.current && amps > 0.02 ? Math.min(amps * 0.12, 0.22) : 0;
       const freq =
         p.type === "buzzer" ? 950 : p.mode === "note" ? p.noteHz : 110 + Math.min(Math.abs(p.volts), 130) * 14;
@@ -396,7 +410,6 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
       let voiced = 0;
       let noisy = 0;
       if (speaking) {
-        anyAudible = true;
         const idx = Math.floor(p.playPos / LETTER_SECONDS);
         const ch = (p.text[idx] ?? " ").toLowerCase();
         const ph = PHONES[ch] ?? PHONE_DEFAULT;
@@ -425,18 +438,6 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
       }
     }
 
-    const nowMs = performance.now();
-    if (
-      anyAudible &&
-      soundOnRef.current &&
-      (ctx.state !== "running" || !volumeToastShownRef.current) &&
-      nowMs - lastVolWarnRef.current > 8000
-    ) {
-      volumeToastShownRef.current = true;
-      lastVolWarnRef.current = nowMs;
-      setVolumeToast(true);
-      window.setTimeout(() => setVolumeToast(false), 4000);
-    }
 
     // sparking: a crackle that grows as any part nears its explosion point
     if (!a.sparkGain) {
@@ -849,6 +850,20 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
       clampCam();
       return;
     }
+    if (drag.kind === "rotate") {
+      const circR = circuitRef.current;
+      const w = toWorld(e);
+      const d = Math.atan2(w.y - drag.midY, w.x - drag.midX) - drag.grabA;
+      const c = Math.cos(d);
+      const sn = Math.sin(d);
+      for (const o of drag.orig) {
+        const v = vertexById(circR, o.id);
+        if (!v) continue;
+        v.x = drag.midX + (o.x - drag.midX) * c - (o.y - drag.midY) * sn;
+        v.y = drag.midY + (o.x - drag.midX) * sn + (o.y - drag.midY) * c;
+      }
+      return;
+    }
     if (drag.kind === "group") {
       // both rays from the same camera — an honest delta while the camera eases
       const wPrev = toWorld({ clientX: drag.lastX, clientY: drag.lastY });
@@ -939,7 +954,7 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
     dragRef.current = null;
     snapHintRef.current = null;
     if (!drag || drag.kind === "orbit" || drag.kind === "pan") return;
-    if (drag.kind === "group") {
+    if (drag.kind === "group" || drag.kind === "rotate") {
       clampAll(circuitRef.current);
       enforceLengths(circuitRef.current, new Set());
       return;
@@ -977,6 +992,27 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
         if (part.type === "button") part.pressed = false;
         if (drag.moved < 5) {
           if (part.type === "switch" && !part.destroyed) part.closed = !part.closed;
+        } else if (part.type === "chip") {
+          // near the dock? snap in and power up straight from the PC
+          const va2 = vertexById(circ, part.a);
+          const vb2 = vertexById(circ, part.b);
+          if (va2 && vb2) {
+            const mx = (va2.x + vb2.x) / 2;
+            const my = (va2.y + vb2.y) / 2;
+            if (Math.hypot(mx - -160, my - -750) < 300) {
+              va2.x = -160 - 55;
+              va2.y = -750;
+              vb2.x = -160 + 55;
+              vb2.y = -750;
+              if (!part.pressed) {
+                part.pressed = true;
+                showInfo("Chip docked — powered straight from the PC. Click it (or the computer) to program it.");
+              }
+            } else if (part.pressed) {
+              part.pressed = false;
+              showInfo("Chip unplugged from the dock — it needs wired power now.");
+            }
+          }
         } else {
           for (const vid of [part.a, part.b]) {
             const v = vertexById(circ, vid);
@@ -1149,9 +1185,33 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
         }
         return;
       }
+      if (pk.kind === "rotate") {
+        // spin the WHOLE machine around its own center, shape intact
+        const part = circ.parts.find((pp) => pp.id === uiRef.current.selectedId);
+        if (part) {
+          const vids = [...new Set(collectGroup(circ, part))];
+          const orig = vids
+            .map((vid) => vertexById(circ, vid))
+            .filter((v): v is Vertex => !!v)
+            .map((v) => ({ id: v.id, x: v.x, y: v.y }));
+          if (orig.length) {
+            const midX = orig.reduce((a, o) => a + o.x, 0) / orig.length;
+            const midY = orig.reduce((a, o) => a + o.y, 0) / orig.length;
+            pushHistory();
+            const w = toWorld(e);
+            dragRef.current = { kind: "rotate", midX, midY, grabA: Math.atan2(w.y - midY, w.x - midX), orig };
+          }
+        }
+        return;
+      }
+      if (pk.kind !== "action" || pk.action !== "parts") setShowShelf(false);
       if (pk.kind === "action") {
         if (pk.action === "guide") onHelp?.();
         if (pk.action === "laptop") setShowLaptop(true);
+        if (pk.action === "undo") undo();
+        if (pk.action === "reset") setNukeAsk(true);
+        if (pk.action === "settings") setShowSettings((v) => !v);
+        if (pk.action === "parts") setShowShelf((v) => !v);
         return;
       }
       // parts and their end-dots always drag directly, whatever the tool mode
@@ -1315,7 +1375,10 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
   const deletePart = useCallback((id: string) => {
     pushHistory();
     const circ = circuitRef.current;
-    circ.parts = circ.parts.filter((p) => p.id !== id);
+    // the whole attached machine goes, not just the one part
+    const start = circ.parts.find((p) => p.id === id);
+    const doomedV = new Set<string>(start ? collectGroup(circ, start) : []);
+    circ.parts = circ.parts.filter((p) => !(doomedV.has(p.a) || doomedV.has(p.b) || p.id === id));
     const used = new Set<string>();
     for (const p of circ.parts) {
       used.add(p.a);
@@ -1323,7 +1386,7 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
     }
     circ.vertices = circ.vertices.filter((v) => used.has(v.id));
     setSelectedId(null);
-  }, [pushHistory]);
+  }, [collectGroup, pushHistory]);
 
   // keyboard: Delete removes, letters press key buttons (the piano)
   useEffect(() => {
@@ -1337,6 +1400,11 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
     };
     const down = (e: KeyboardEvent) => {
       if (isTyping()) return;
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        redo();
+        return;
+      }
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "z") {
         e.preventDefault();
         undo();
@@ -1468,6 +1536,7 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
     electronView,
     showAmps,
     showLabels,
+    shelfOpen: showShelf,
   };
 
   // synthetic 2D view of the camera target, for the microscope overlay
@@ -1511,7 +1580,14 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
     >
       {/* phone-width: the shelf tucks under the board instead of beside it */}
       <div className="flex flex-1 min-h-0 flex-col-reverse sm:flex-row">
-        <aside className="w-full h-52 border-t sm:w-44 md:w-56 sm:h-auto sm:border-t-0 sm:border-r p-2 shrink-0 overflow-y-auto border-[var(--line)] bg-[var(--panel)]">
+        <aside
+          className={`shrink-0 overflow-y-auto overflow-x-hidden border-[var(--line)] bg-[var(--panel)] transition-all duration-300 ease-out ${
+            showShelf
+              ? "w-full h-52 border-t sm:w-56 sm:h-auto sm:border-t-0 sm:border-r p-2"
+              : "w-0 h-0 sm:h-auto p-0 border-0"
+          }`}
+          aria-hidden={!showShelf}
+        >
           {TOOLBOX.map((group) => (
             <div key={group.title} className="mb-3">
               <h4 className="text-[10px] uppercase tracking-widest text-[var(--ink-3)] px-1.5 mb-1">{group.title}</h4>
@@ -1700,12 +1776,6 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
             </div>
           )}
 
-          {volumeToast && (
-            <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-40 border border-[var(--accent-dim)] bg-[var(--panel)] px-5 py-3 text-sm text-[var(--ink)]">
-              This makes sound — turn your computer volume up to hear it.
-            </div>
-          )}
-
           {/* junction popover — click a dot to disconnect it */}
           {(() => {
             if (!vertexMenu) return null;
@@ -1723,27 +1793,18 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
                 <div className="text-[11px] text-[var(--ink-3)] px-1 pb-1.5 text-center">
                   {n} things joined at this connector
                 </div>
-                <div className="flex gap-1.5 justify-center">
-                  <button
-                    className="btn"
-                    style={{ color: "var(--accent)" }}
-                    title="Keep everything soldered together"
-                    aria-label="Keep joined"
-                    onClick={() => setVertexMenu(null)}
-                  >
-                    ✓ Keep
-                  </button>
+                <div className="flex justify-center">
                   <button
                     className="btn btn-danger"
-                    title="Delete this connector — every wire and part attached here comes loose"
-                    aria-label="Delete connector and unattach everything"
+                    title="Unattach — everything joined here comes loose (click anywhere else to keep)"
+                    aria-label="Unattach"
                     onClick={() => {
                       splitVertex(v.id);
                       setVertexMenu(null);
-                      showInfo("Connector deleted — the ends are loose again. Drag them wherever you like.");
+                      showInfo("Unattached — the ends are loose again.");
                     }}
                   >
-                    ✕ Delete — unattach all
+                    ✕ Unattach
                   </button>
                 </div>
               </div>
@@ -1809,7 +1870,9 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
           )}
 
           {infoToast && (
-            <div className="absolute top-3 left-1/2 -translate-x-1/2 z-30 border border-[var(--line)] bg-[var(--panel)] px-4 py-2 text-xs text-[var(--ink)]">
+            <div
+              key={infoToast}
+              className="toast-fade absolute top-3 left-1/2 -translate-x-1/2 z-30 border border-[var(--line)] bg-[var(--panel)] px-4 py-2 text-xs text-[var(--ink)]">
               {infoToast}
             </div>
           )}
@@ -1840,16 +1903,6 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
           </div>
 
 
-          <button
-            className="absolute top-3 right-3 z-10 border border-[var(--line)] bg-[var(--panel)] p-2 text-[var(--ink-3)] hover:text-[var(--ink)] hover:bg-[var(--panel-2)] transition-colors"
-            title="Clear the whole board"
-            aria-label="Clear the whole board"
-            onClick={clearBoard}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round">
-              <path d="M2.5 4h11 M6.5 4V2.5h3V4 M4 4l.8 9.5a1 1 0 0 0 1 .9h4.4a1 1 0 0 0 1-.9L12 4 M6.5 6.8v4.7 M9.5 6.8v4.7" />
-            </svg>
-          </button>
 
           {showLaptop && (
             <div
@@ -1883,6 +1936,31 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
             </div>
           )}
 
+          {nukeAsk && (
+            <div className="absolute inset-0 z-40 flex items-center justify-center" style={{ background: "rgba(6,10,18,0.45)" }}>
+              <div className="border border-[var(--danger-dim)] bg-[var(--panel)] p-4 w-[320px] text-sm">
+                <p className="font-semibold text-[var(--ink)] mb-1">Clear the whole bench?</p>
+                <p className="text-[12.5px] text-[var(--ink-2)] mb-3">
+                  Every part and wire goes in the trash. Cmd/Ctrl+Z can still bring it back.
+                </p>
+                <div className="flex gap-2 justify-end">
+                  <button className="btn" onClick={() => setNukeAsk(false)}>
+                    Keep it
+                  </button>
+                  <button
+                    className="btn btn-danger"
+                    onClick={() => {
+                      clearBoard();
+                      setNukeAsk(false);
+                    }}
+                  >
+                    Clear everything
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
           {resizeSnap !== null && (
             <div className="absolute inset-0 z-40 bg-[var(--bg)]">
               {resizeSnap && (
@@ -1906,31 +1984,6 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
               dragRef.current = { kind: "orbit", lastX: e.clientX, lastY: e.clientY };
             }}
           />
-
-          {/* the corner row: undo · settings · trash */}
-          <button
-            className="absolute top-3 right-21 z-10 border border-[var(--line)] bg-[var(--panel)] p-2 text-[var(--ink-3)] hover:text-[var(--ink)] hover:bg-[var(--panel-2)] transition-colors"
-            title="Undo (or press Cmd/Ctrl+Z)"
-            aria-label="Undo"
-            onClick={undo}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M6.5 3 3 6.5 6.5 10" />
-              <path d="M3 6.5h6a4 4 0 0 1 0 8H7" />
-            </svg>
-          </button>
-          <button
-            className="absolute top-3 right-12 z-10 border border-[var(--line)] bg-[var(--panel)] p-2 text-[var(--ink-3)] hover:text-[var(--ink)] hover:bg-[var(--panel-2)] transition-colors"
-            title="View settings: current vs electrons, amps, labels"
-            aria-label="View settings"
-            aria-expanded={showSettings}
-            onClick={() => setShowSettings((v) => !v)}
-          >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
-              <circle cx="12" cy="12" r="3.2" />
-              <path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1.03 1.56V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1.11-1.56 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.56-1.03H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.56-1.11 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1.02-1.56V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.56 1.02H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.51 1.03z" />
-            </svg>
-          </button>
 
           {showSettings && (
             <div
@@ -2010,7 +2063,6 @@ export default function CircuitLab({ initialBuild, onHelp }: CircuitLabProps) {
           {selected && selected.type !== "wire" && (
             <Inspector
               part={selected}
-              onDelete={() => deletePart(selected.id)}
               onClose={() => setSelectedId(null)}
               onFlip={() => {
                 const tmp = selected.a;

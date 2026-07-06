@@ -32,6 +32,11 @@ function starter(cx: number, cy: number): Circuit {
   P("wire", br, tr);
   P("bulb", tl, tr);
   P("wire", tl, bl);
+  // the PC's power lead: a black cable out of the tower ending in a bare
+  // joint — solder your Arduino to it for five steady volts
+  const pcA = V(cx - 780, cy - 1150);
+  const pcB = V(cx - 780, cy - 700);
+  P("usbc", pcA, pcB);
   return circ;
 }
 

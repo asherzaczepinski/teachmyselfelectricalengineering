@@ -9,12 +9,10 @@ import { fmtAmps, fmtVolts } from "../../lib/fmt";
 
 export function Inspector({
   part,
-  onDelete,
   onClose,
   onFlip,
 }: {
   part: Part;
-  onDelete: () => void;
   onClose: () => void;
   onFlip: () => void;
 }) {
@@ -416,10 +414,6 @@ export function Inspector({
         <span>across it: {fmtVolts(part.volts)}</span>
         <span className={part.temp > 60 ? "text-orange-400" : ""}>{Math.round(part.temp)} °C</span>
       </div>
-
-      <button className="btn btn-danger mt-2 w-full justify-center" onClick={onDelete}>
-        Remove this part (or press Delete)
-      </button>
     </div>
   );
 }

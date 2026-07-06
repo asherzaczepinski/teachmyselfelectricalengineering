@@ -41,7 +41,8 @@ export type Pick =
   | { kind: "handle" }
   | { kind: "calckey"; partId: string; key: string }
   | { kind: "label"; text: string }
-  | { kind: "action"; action: "guide" | "laptop" }
+  | { kind: "action"; action: "guide" | "laptop" | "undo" | "reset" | "settings" | "parts" }
+  | { kind: "rotate" }
   | { kind: "bg"; x: number; y: number };
 
 export interface BoardApi {
@@ -59,7 +60,8 @@ export interface UIState {
   degrees: Map<string, number>;
   electronView: boolean; // dots show real electron drift instead of + → −
   showAmps: boolean; // show live current readouts on parts
-  showLabels: boolean; // show part info labels (Ω, V, names of magnets, …)
+  showLabels: boolean;
+  shelfOpen: boolean; // the parts drawer under the desk is out // show part info labels (Ω, V, names of magnets, …)
 }
 
 interface Props {
@@ -409,33 +411,202 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
     const ringMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.8, side: THREE.DoubleSide });
 
 
-    // the guide: a green hardback at the mat's front-left corner — click it
+    // the guide: a green hardback, long edge running away from you,
+    // with a flat green spine along its side
     {
       const book = new THREE.Group();
-      book.position.set(BENCH.cx - BENCH.w / 2 + 620, -(BENCH.cy + BENCH.h / 2 - 560), 0);
-      book.rotation.z = -0.12;
+      book.position.set(BENCH.cx - BENCH.w / 2 + 620, -(BENCH.cy + BENCH.h / 2 - 660), 0);
+      book.rotation.z = -0.06;
       const coverM = new THREE.MeshStandardMaterial({ color: 0x2f6b46, roughness: 0.55 });
-      const backCover = new THREE.Mesh(new THREE.BoxGeometry(560, 420, 16), coverM);
+      const backCover = new THREE.Mesh(new THREE.BoxGeometry(420, 560, 16), coverM);
       backCover.position.z = 8;
       const pages = new THREE.Mesh(
-        new THREE.BoxGeometry(524, 392, 64),
+        new THREE.BoxGeometry(384, 540, 64),
         new THREE.MeshStandardMaterial({ color: 0xe9e3d3, roughness: 0.95 })
       );
-      pages.position.set(14, 0, 48);
-      const frontCover = new THREE.Mesh(new THREE.BoxGeometry(560, 420, 16), coverM);
+      pages.position.set(10, -4, 48);
+      const frontCover = new THREE.Mesh(new THREE.BoxGeometry(420, 560, 16), coverM);
       frontCover.position.z = 88;
       frontCover.castShadow = true;
-      const spine = new THREE.Mesh(
-        new THREE.CylinderGeometry(48, 48, 420, 12, 1, false, 0, Math.PI).rotateZ(Math.PI / 2).rotateY(Math.PI / 2),
-        coverM
-      );
-      spine.position.set(-280, 0, 48);
-      const title = textPlane("GUIDE", "#e9d9a8", 96);
-      title.position.set(20, 0, 97);
+      const spine = new THREE.Mesh(new THREE.BoxGeometry(22, 560, 96), coverM);
+      spine.position.set(-199, 0, 48);
+      const title = textPlane("GUIDE", "#e9d9a8", 84);
+      title.position.set(10, 0, 97);
       book.add(backCover, pages, frontCover, spine, title);
       book.traverse((o) => (o.userData.uiAction = "guide"));
       scene.add(book);
     }
+
+    // the parts drawer: a real drawer under the desk's front lip that
+    // slides out whenever the parts panel is open
+    const partsDrawer = new THREE.Group();
+    {
+      const face = new THREE.Mesh(
+        new THREE.BoxGeometry(1500, 70, 330),
+        new THREE.MeshStandardMaterial({ color: 0x6b5233, roughness: 0.7 })
+      );
+      face.position.set(0, -300, 0);
+      face.castShadow = true;
+      const tubM = new THREE.MeshStandardMaterial({ color: 0x4e3c26, roughness: 0.85 });
+      const tub = new THREE.Mesh(new THREE.BoxGeometry(1420, 540, 40), tubM);
+      tub.position.set(0, 0, -130);
+      for (const [dx, dw] of [[-710, 20], [710, 20]] as [number, number][]) {
+        const wall = new THREE.Mesh(new THREE.BoxGeometry(dw, 540, 240), tubM);
+        wall.position.set(dx, 0, -30);
+        partsDrawer.add(wall);
+      }
+      const backW = new THREE.Mesh(new THREE.BoxGeometry(1420, 20, 240), tubM);
+      backW.position.set(0, 260, -30);
+      const handle = new THREE.Mesh(
+        new THREE.BoxGeometry(360, 40, 44),
+        new THREE.MeshStandardMaterial({ color: 0x22262e, roughness: 0.4, metalness: 0.7 })
+      );
+      handle.position.set(0, -348, 40);
+      partsDrawer.add(face, tub, backW, handle);
+      // a jumble of spare parts living in the tub
+      const jumble: [number, number, number][] = [
+        [0xc62f2f, -420, 60],
+        [0x2458c6, -140, -40],
+        [0xf2c230, 160, 80],
+        [0x1f9d4d, 430, -20],
+        [0x8d939c, -300, -90],
+        [0x0b6e8c, 320, 120],
+      ];
+      for (const [col, jx, jy] of jumble) {
+        const bit = new THREE.Mesh(
+          new THREE.BoxGeometry(150, 60, 40),
+          new THREE.MeshStandardMaterial({ color: col, roughness: 0.6 })
+        );
+        bit.position.set(jx, jy, -90);
+        bit.rotation.z = jx * 0.003;
+        partsDrawer.add(bit);
+      }
+      const bigHit = new THREE.Mesh(
+        new THREE.BoxGeometry(1700, 500, 700),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+      );
+      bigHit.position.set(0, -260, 60);
+      partsDrawer.add(bigHit);
+      const faceLabel = textPlane("PARTS", "#f2e7d2", 110);
+      faceLabel.rotation.x = Math.PI / 2;
+      faceLabel.position.set(0, -338, 60);
+      partsDrawer.add(faceLabel);
+      partsDrawer.traverse((o) => (o.userData.uiAction = "parts"));
+      // sitting ON the mat, face toward you, sliding your way when open
+      partsDrawer.position.set(BENCH.cx + 1750, -880, 170);
+      scene.add(partsDrawer);
+    }
+
+    // the chip dock: an obvious socket wired to the PC — snap a microchip in
+    {
+      const plate = new THREE.Mesh(
+        new THREE.BoxGeometry(360, 220, 14),
+        new THREE.MeshStandardMaterial({ color: 0x22262e, roughness: 0.6 })
+      );
+      plate.position.set(-160, 750, 7);
+      scene.add(plate);
+      const slot = new THREE.Mesh(
+        new THREE.BoxGeometry(150, 34, 10),
+        new THREE.MeshStandardMaterial({ color: 0x0b1220, roughness: 0.8 })
+      );
+      slot.position.set(-160, 750, 15);
+      scene.add(slot);
+      const rim = new THREE.Mesh(
+        new THREE.BoxGeometry(174, 56, 4),
+        new THREE.MeshStandardMaterial({ color: 0x134e4a, emissive: 0x2dd4bf, emissiveIntensity: 0.7 })
+      );
+      rim.position.set(-160, 750, 12);
+      scene.add(rim);
+      const tag = textPlane("CHIP DOCK", "#7ce7ff", 64);
+      tag.position.set(-160, 620, 15);
+      scene.add(tag);
+      // a ribbon running back to the tower
+      const ribbon = new THREE.Mesh(
+        new THREE.BoxGeometry(70, 420, 6),
+        new THREE.MeshStandardMaterial({ color: 0x475569, roughness: 0.7 })
+      );
+      ribbon.position.set(-320, 960, 4);
+      ribbon.rotation.z = 0.35;
+      scene.add(ribbon);
+    }
+
+    // the control buttons: ON the mat's right edge — parts, settings, nuke
+    {
+      const mkMatButton = (bx: number, capColor: number, label: string, action: string, big = false) => {
+        const wy = BENCH.cy + BENCH.h / 2 - 380; // bottom edge, near you
+        const base = new THREE.Mesh(
+          new THREE.CylinderGeometry(big ? 190 : 150, big ? 210 : 170, 60, 20).rotateX(Math.PI / 2),
+          new THREE.MeshStandardMaterial({ color: 0x30363f, roughness: 0.5, metalness: 0.4 })
+        );
+        base.position.set(bx, -wy, 20);
+        base.castShadow = true;
+        const capM = new THREE.MeshStandardMaterial({ color: capColor, roughness: 0.45 });
+        const cap = new THREE.Mesh(
+          new THREE.CylinderGeometry(big ? 130 : 96, big ? 150 : 110, 60, 20).rotateX(Math.PI / 2),
+          capM
+        );
+        cap.position.set(bx, -wy, 66);
+        cap.castShadow = true;
+        const tag = textPlane(label, "#c8cfda", 82);
+        tag.position.set(bx, -(wy - (big ? 330 : 290)), 2);
+        // a fat invisible hit zone so the button is easy to press
+        const zone = new THREE.Mesh(
+          new THREE.BoxGeometry(big ? 560 : 460, big ? 560 : 460, 200),
+          new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
+        );
+        zone.position.set(bx, -wy, 90);
+        for (const o of [base, cap, tag, zone]) o.userData.uiAction = action;
+        scene.add(base, cap, tag, zone);
+        return { cap };
+      };
+      mkMatButton(BENCH.cx + BENCH.w / 2 - 350, 0x3f4650, "SETTINGS", "settings", true);
+      mkMatButton(BENCH.cx + BENCH.w / 2 - 1100, 0xf2c230, "NUKE", "reset", true);
+      // cap icons: a radiation trefoil for the nuke, a gear for settings
+      const paintIcon = (draw: (g2: CanvasRenderingContext2D) => void, x: number) => {
+        const c2 = document.createElement("canvas");
+        c2.width = c2.height = 128;
+        const g2 = c2.getContext("2d")!;
+        draw(g2);
+        const m2 = new THREE.Mesh(
+          new THREE.PlaneGeometry(170, 170),
+          new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(c2), transparent: true })
+        );
+        m2.position.set(x, -(BENCH.cy + BENCH.h / 2 - 380), 97);
+        m2.userData.uiAction = x < BENCH.cx + 200 ? "reset" : "settings";
+        scene.add(m2);
+      };
+      paintIcon((g2) => {
+        g2.fillStyle = "#16181d";
+        g2.beginPath();
+        g2.arc(64, 64, 11, 0, Math.PI * 2);
+        g2.fill();
+        for (const a0 of [-90, 30, 150]) {
+          g2.beginPath();
+          g2.moveTo(64, 64);
+          g2.arc(64, 64, 44, ((a0 - 30) * Math.PI) / 180, ((a0 + 30) * Math.PI) / 180);
+          g2.closePath();
+          g2.fill();
+        }
+      }, BENCH.cx + BENCH.w / 2 - 1100);
+      paintIcon((g2) => {
+        g2.strokeStyle = "#e6e1d3";
+        g2.fillStyle = "#e6e1d3";
+        g2.lineWidth = 10;
+        g2.beginPath();
+        g2.arc(64, 64, 26, 0, Math.PI * 2);
+        g2.stroke();
+        for (let i = 0; i < 8; i++) {
+          const a = (i / 8) * Math.PI * 2;
+          g2.save();
+          g2.translate(64 + Math.cos(a) * 40, 64 + Math.sin(a) * 40);
+          g2.rotate(a);
+          g2.fillRect(-7, -9, 14, 18);
+          g2.restore();
+        }
+      }, BENCH.cx + BENCH.w / 2 - 350);
+    }
+
+
 
     // the shop computer: a desktop ON the mat, ports facing your chair.
     // Click any of it to program the microchips.
@@ -533,6 +704,41 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
     }
     regionFrame.visible = false;
     scene.add(regionFrame);
+    // light dashed outline around the whole connected machine when a part
+    // is selected — it shows exactly what a body-drag would carry
+    const dashMat = new THREE.LineDashedMaterial({ color: 0xb9c2cc, dashSize: 42, gapSize: 26, transparent: true, opacity: 0.75 });
+    const dashGeo = new THREE.BufferGeometry().setFromPoints([
+      new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(), new THREE.Vector3(),
+    ]);
+    const dashBox = new THREE.Line(dashGeo, dashMat);
+    dashBox.visible = false;
+    scene.add(dashBox);
+    // the little rotate arrow that rides the selected part's flank
+    const rotC = document.createElement("canvas");
+    rotC.width = rotC.height = 96;
+    {
+      const g2 = rotC.getContext("2d")!;
+      g2.strokeStyle = "#e6e1d3";
+      g2.lineWidth = 9;
+      g2.beginPath();
+      g2.arc(48, 48, 28, -Math.PI * 0.25, Math.PI, false);
+      g2.stroke();
+      g2.fillStyle = "#e6e1d3";
+      g2.beginPath();
+      g2.moveTo(76, 20);
+      g2.lineTo(94, 34);
+      g2.lineTo(66, 44);
+      g2.closePath();
+      g2.fill();
+    }
+    const rotHandle = new THREE.Mesh(
+      new THREE.PlaneGeometry(46, 46),
+      new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(rotC), transparent: true, depthTest: false })
+    );
+    rotHandle.renderOrder = 999;
+    rotHandle.userData.rotate = true;
+    rotHandle.visible = false;
+    scene.add(rotHandle);
     const selRing = new THREE.Mesh(ringGeo, ringMat);
     selRing.visible = false;
     selRing.position.z = 1.2;
@@ -590,6 +796,7 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
         let o: THREE.Object3D | null = h.object;
         while (o) {
           if (o.userData.uiAction) return { kind: "action", action: o.userData.uiAction };
+          if (o.userData.rotate) return { kind: "rotate" };
           if (o.userData.calcKey && o.userData.partIdKey) {
             return { kind: "calckey", partId: o.userData.partIdKey, key: o.userData.calcKey.key };
           }
@@ -651,7 +858,7 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
       );
       camera.up.set(0, 0, 1);
       camera.lookAt(t3);
-      key.position.set(cur.tx + 260, -cur.ty + 200, 640);
+      key.position.set(cur.tx + 1100, -cur.ty - 2400, 1500); // front-right, slanting at the screen
       key.target.position.copy(t3);
       const shadowSpan = Math.min(1600, cur.dist * 1.4 + 200);
       const sc = key.shadow.camera as THREE.OrthographicCamera;
@@ -835,7 +1042,7 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
           // a generous invisible grab bubble: clicking anywhere near the ball
           // grabs the BALL, never the part behind it
           const bubble = new THREE.Mesh(
-            new THREE.SphereGeometry(2.6, 8, 6),
+            new THREE.SphereGeometry(4.2, 8, 6),
             new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })
           );
           bubble.userData.vertexId = v.id;
@@ -858,6 +1065,81 @@ export default function ThreeBoard({ circuitRef, particlesRef, camRef, uiRef, ap
 
       // ——— selection / snap / handle ———
       dotScaleVec.setScalar(Math.max(1, cur.dist / 1000));
+
+      // the parts drawer glides toward you when open
+      {
+        const home = -880;
+        const want = ui.shelfOpen ? home - 520 : home;
+        partsDrawer.position.y += (want - partsDrawer.position.y) * 0.16;
+      }
+
+      // the dashed machine outline for the selected part
+      dashBox.visible = false;
+      rotHandle.visible = false;
+      if (ui.selectedId) {
+        const sp = circ.parts.find((pp) => pp.id === ui.selectedId);
+        const va2 = sp && vmap.get(sp.a);
+        const vb2 = sp && vmap.get(sp.b);
+        if (sp && va2 && vb2) {
+          const L2 = Math.max(1, Math.hypot(vb2.x - va2.x, vb2.y - va2.y));
+          const px2 = -(vb2.y - va2.y) / L2;
+          const py2 = (vb2.x - va2.x) / L2;
+          rotHandle.position.set(
+            (va2.x + vb2.x) / 2 + px2 * 90,
+            -((va2.y + vb2.y) / 2 + py2 * 90),
+            30
+          );
+          rotHandle.scale.setScalar(Math.min(3, Math.max(0.9, cur.dist / 900)));
+          rotHandle.visible = true;
+        }
+      }
+      if (ui.selectedId) {
+        const start = circ.parts.find((pp) => pp.id === ui.selectedId);
+        if (start && !start.destroyed) {
+          // flood out over shared joints to find the whole machine
+          const byVert = new Map<string, Part[]>();
+          for (const pp of circ.parts) {
+            for (const vid of [pp.a, pp.b]) {
+              const arr = byVert.get(vid);
+              if (arr) arr.push(pp);
+              else byVert.set(vid, [pp]);
+            }
+          }
+          const seen = new Set<string>([start.id]);
+          const queue = [start];
+          let dx0 = Infinity, dy0 = Infinity, dx1 = -Infinity, dy1 = -Infinity;
+          while (queue.length) {
+            const pp = queue.pop()!;
+            for (const vid of [pp.a, pp.b]) {
+              const v = vmap.get(vid);
+              if (v) {
+                dx0 = Math.min(dx0, v.x);
+                dy0 = Math.min(dy0, v.y);
+                dx1 = Math.max(dx1, v.x);
+                dy1 = Math.max(dy1, v.y);
+              }
+              for (const q of byVert.get(vid) ?? []) {
+                if (!seen.has(q.id)) {
+                  seen.add(q.id);
+                  queue.push(q);
+                }
+              }
+            }
+          }
+          if (isFinite(dx0)) {
+            const pad2 = 60;
+            const pts = dashGeo.attributes.position as THREE.BufferAttribute;
+            pts.setXYZ(0, dx0 - pad2, -(dy0 - pad2), 5);
+            pts.setXYZ(1, dx1 + pad2, -(dy0 - pad2), 5);
+            pts.setXYZ(2, dx1 + pad2, -(dy1 + pad2), 5);
+            pts.setXYZ(3, dx0 - pad2, -(dy1 + pad2), 5);
+            pts.setXYZ(4, dx0 - pad2, -(dy0 - pad2), 5);
+            pts.needsUpdate = true;
+            dashBox.computeLineDistances();
+            dashBox.visible = true;
+          }
+        }
+      }
 
       // one square frame around the marquee REGION — a plain click draws nothing
       const selIds = ui.selectedIds.length > 1 ? ui.selectedIds : [];

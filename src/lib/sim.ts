@@ -234,7 +234,7 @@ export const CATALOG: Record<PartType, PartDef> = {
     explodeAt: 1000,
   },
   usbc: {
-    label: "USB-C power",
+    label: "PC power lead",
     hint: "Five steady volts from a phone charger — the modern bench power source.",
     len: 100,
     rigid: true,
@@ -1275,7 +1275,7 @@ export function stepCircuit(circ: Circuit, dt: number): StepEvents {
   // ——— run every powered microchip's program one slice forward ———
   for (const p of circ.parts) {
     if (p.type !== "chip") continue;
-    const powered = !p.destroyed && Math.abs(p.current) > 0.01;
+    const powered = !p.destroyed && (Math.abs(p.current) > 0.01 || p.pressed); // pressed = docked into the PC
     if (!powered) {
       p.pc = 0;
       p.chipDrive = 0;

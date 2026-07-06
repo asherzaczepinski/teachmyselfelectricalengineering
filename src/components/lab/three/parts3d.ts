@@ -742,6 +742,10 @@ export function buildPart(p: Part, L: number): PartHandle {
       }
       const mcu = boxAt(34, 10, 5, M.darker, cx + 4, 8, LEAD_Z + 4);
       g.add(mcu);
+      // the edge connector: the tab you shove into the PC's chip dock
+      const edge = boxAt(18, 26, 5, new THREE.MeshStandardMaterial({ color: 0xc9a227, roughness: 0.35, metalness: 0.8 }), cx - 46, 0, LEAD_Z);
+      g.add(edge);
+      for (let i = 0; i < 5; i++) g.add(boxAt(14, 2.4, 6, M.darker, cx - 46, -10 + i * 5, LEAD_Z));
       const usb = boxAt(14, 12, 8, M.steel, cx - 33, 12, LEAD_Z + 5);
       const jack = boxAt(12, 11, 9, new THREE.MeshStandardMaterial({ color: 0x111318, roughness: 0.6 }), cx - 32, -10, LEAD_Z + 5);
       g.add(usb, jack);
@@ -750,8 +754,8 @@ export function buildPart(p: Part, L: number): PartHandle {
       const pwrMat = new THREE.MeshStandardMaterial({ color: 0x4a1414, emissive: 0xef4444, emissiveIntensity: 0 });
       g.add(boxAt(4, 4, 3, pwrMat, cx + 28, -2, LEAD_Z + 5));
       update = (p2, _L2, t) => {
-        const powered = !p2.destroyed && Math.abs(p2.current) > 0.01;
-        pwrMat.emissiveIntensity = powered ? 1.4 : 0; // ON light: it has power
+        const powered = !p2.destroyed && (Math.abs(p2.current) > 0.01 || p2.pressed);
+        pwrMat.emissiveIntensity = powered ? 1.4 : 0; // ON light: docked or wired
         beatMat.emissiveIntensity = powered && t % 1 < 0.5 ? 1.6 : 0; // heartbeat
       };
       break;

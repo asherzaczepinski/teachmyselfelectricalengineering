@@ -216,3 +216,14 @@ input.sim-input {
     transition: none;
   }
 }
+
+/* info toasts breathe in and fade away */
+@keyframes toastfade {
+  0% { opacity: 0; }
+  6% { opacity: 1; }
+  78% { opacity: 1; }
+  100% { opacity: 0; }
+}
+.toast-fade {
+  animation: toastfade 4.5s ease-in-out forwards;
+}

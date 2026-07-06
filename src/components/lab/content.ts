@@ -93,7 +93,7 @@ export const LEARN: Record<PartType, string> = {
   memory:
     "A memory cell. It holds one number on its screen and adds one every time current STARTS flowing through it. Cut the power completely — it still remembers. Inside are latching switches: switches that stay flipped after the push that flipped them is gone.",
   chip: "A microcontroller — a whole computer the size of a fingernail, ready to be programmed. Power its two pins and its onboard light blinks its 'I'm alive' heartbeat. Later steps will teach it tricks; for now it's the newest tool on your bench.",
-  usbc: "The USB lead from the shop laptop: five steady, safe volts. It's how a real Arduino gets its power and its programs — wire it to your microchip's pins and the board wakes up.",
+  usbc: "The PC's power lead: five steady, safe volts out of the tower. Solder your microchip (or anything small) to its bare end joint and the computer feeds it — exactly how a real Arduino drinks from a USB port.",
   calculator: "Inside this box are thousands of the same magnetic-switch tricks you can build yourself — the 1+1 adder, repeated and chained until it can multiply and divide. Real chips just shrink those switches down to specks of silicon. No power, no math: it's a circuit part like any other.",
 };
 
