@@ -88,6 +88,7 @@ type LoopPath = {
   BOT: number;
   batTop: number;
   batBot: number;
+  tSwitch: number; // arc position of the switch (right edge, middle)
 };
 let pathCache: { vw: number; vh: number; p: LoopPath } | null = null;
 
@@ -132,7 +133,9 @@ function loopPath(vw: number, vh: number): LoopPath {
     }
     return segs[segs.length - 1].at(1);
   };
-  const p = { total, at, X0, X1, TOP, BOT, batTop, batBot };
+  // arc distance from the start to the middle of the right edge
+  const tSwitch = segs[0].len + segs[1].len + segs[2].len + segs[3].len + (BOT - R - mid);
+  const p = { total, at, X0, X1, TOP, BOT, batTop, batBot, tSwitch };
   pathCache = { vw, vh, p };
   return p;
 }
@@ -204,26 +207,12 @@ function drawScene(
   ctx.fillText("+ in", P.X0, P.batTop + 12);
   ctx.fillStyle = C.minus;
   ctx.fillText("− out", P.X0, P.batBot - 4);
-
-  // the on/off switch lives on the battery — click it
-  const swY = midY - 14;
-  ctx.fillStyle = scene.on ? "rgba(232, 176, 75, 0.22)" : "#2a2f3d";
-  ctx.strokeStyle = scene.on ? "#e8b04b" : "#5a637a";
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.roundRect(P.X0 - 21, swY - 11, 42, 22, 11);
-  ctx.fill();
-  ctx.stroke();
-  ctx.fillStyle = scene.on ? "#e8b04b" : "#8a92a6";
-  ctx.beginPath();
-  ctx.arc(P.X0 + (scene.on ? 10 : -10), swY, 7, 0, 7);
-  ctx.fill();
-  ctx.font = `10px ${MONO}`;
-  ctx.fillStyle = scene.on ? "#e8b04b" : C.ink3;
-  ctx.fillText(scene.on ? "ON" : "OFF", P.X0, swY + 25);
+  ctx.fillStyle = C.warm;
+  ctx.font = `700 15px ${MONO}`;
+  ctx.fillText(`${scene.volts} V`, P.X0, midY - 2);
   ctx.fillStyle = C.ink3;
   ctx.font = `11px ${MONO}`;
-  ctx.fillText("battery", P.X0, midY + 28);
+  ctx.fillText("battery", P.X0, midY + 16);
 
   // pick the push, right next to the battery
   const chipX = P.X0 + 64;
@@ -266,15 +255,68 @@ function drawScene(
     ctx.fillText("nobody passing = 0.00 A", doorX, P.TOP - 30);
   }
 
+  // the switch: a real gap in the track on the other side — click to open/close
+  const SX = P.X1;
+  const SY = midY;
+  if (!scene.on) ctx.clearRect(SX - 18, SY - 24, 36, 48); // open = a hole in the walkway
+  ctx.fillStyle = "#9aa3b8";
+  for (const py of [SY - 28, SY + 28]) {
+    ctx.beginPath();
+    ctx.arc(SX, py, 4.5, 0, 7);
+    ctx.fill();
+  }
+  ctx.strokeStyle = scene.on ? "#d8dce8" : "#9aa3b8";
+  ctx.lineWidth = 5;
+  ctx.lineCap = "round";
+  ctx.beginPath();
+  ctx.moveTo(SX, SY + 28);
+  if (scene.on) ctx.lineTo(SX, SY - 28);
+  else ctx.lineTo(SX + 38, SY - 12); // lever swung open
+  ctx.stroke();
+  // the lever is metal too — it has its own electrons, stuck on board when open
+  // (when it's closed they're just part of the marching crowd)
+  if (!scene.on) {
+    for (const [f, ph] of [
+      [0.22, 1.7],
+      [0.55, 4.2],
+      [0.86, 0.6],
+    ] as const) {
+      const lx = SX + 38 * f + Math.sin(now * 0.009 + ph) * 1.2;
+      const ly = SY + 28 + (-12 - 28) * f + Math.cos(now * 0.011 + ph * 2) * 1.1;
+      drawStickPerson(ctx, lx, ly - 4, C.electron, 0, 0.7);
+    }
+  }
+  ctx.textAlign = "right";
+  ctx.font = `11px ${MONO}`;
+  ctx.fillStyle = C.ink2;
+  ctx.fillText(scene.on ? "switch: closed — click to open" : "switch: open — click to close", SX - 30, SY + 4);
+
+  // electrons repel — the crowd re-spaces itself, so toggling never leaves gaps
+  // (paused while the "go!" wave is mid-sweep so the freeze stays visible)
+  if (!scene.on || sweep > 1) {
+    const targetGap = P.total / ppl.length;
+    const k = Math.min(0.5, 3 * dt);
+    for (let i = 0; i < ppl.length; i++) {
+      const j = (i + 1) % ppl.length;
+      const gap = (ppl[j] - ppl[i] + P.total) % P.total;
+      const err = (gap - targetGap) * k * 0.5;
+      ppl[i] = (ppl[i] + err + P.total) % P.total;
+      ppl[j] = (ppl[j] - err + P.total) % P.total;
+    }
+  }
+
   // the people: always shaking (electrons jiggle!), each one walking only
-  // once the "go!" wave has reached their spot
+  // once the "go!" wave (which starts at the switch) has reached their spot
   for (let i = 0; i < ppl.length; i++) {
-    const active = ppl[i] <= frontT;
+    const relPos = (ppl[i] - P.tSwitch + P.total) % P.total;
+    const active = relPos <= frontT;
     if (active) ppl[i] = (ppl[i] + speed * dt) % P.total;
     const t = ppl[i];
     const pt = P.at(t);
     // hidden while inside the battery
     if (Math.abs(pt.x - P.X0) < 18 && pt.y > P.batTop - 12 && pt.y < P.batBot + 12) continue;
+    // hidden in the open switch gap — there's literally no path there
+    if (!scene.on && Math.abs(pt.x - SX) < 10 && Math.abs(pt.y - SY) < 24) continue;
     const shakeX = Math.sin(now * 0.009 + i * 2.1) * 1.4;
     const shakeY = Math.cos(now * 0.011 + i * 1.3) * 1.2;
     drawStickPerson(
@@ -287,9 +329,9 @@ function drawScene(
     );
   }
 
-  // the "go!" shove racing around the loop at (nearly) light speed
+  // the "go!" shove racing around the loop at (nearly) light speed, from the switch
   if (scene.on && sweep > 0 && sweep < 1) {
-    const pt = P.at(sweep * P.total);
+    const pt = P.at(P.tSwitch + sweep * P.total);
     const g = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, 40);
     g.addColorStop(0, "rgba(150, 226, 255, 0.8)");
     g.addColorStop(1, "rgba(150, 226, 255, 0)");
@@ -338,7 +380,7 @@ export default function OneLoop() {
       const chipX = P.X0 + 64;
       if (Math.abs(x - chipX) < 25 && Math.abs(y - (mid - 14)) < 13) setVolts(3);
       else if (Math.abs(x - chipX) < 25 && Math.abs(y - (mid + 14)) < 13) setVolts(9);
-      else if (Math.abs(x - P.X0) < 36 && y > P.batTop - 12 && y < P.batBot + 12) toggleOn();
+      else if (Math.abs(x - P.X1) < 55 && Math.abs(y - mid) < 55) toggleOn();
     },
     [toggleOn]
   );
@@ -406,12 +448,6 @@ export default function OneLoop() {
                     ? `${electronsPerSecond(amps)} electrons cross any point each second`
                     : "off — no electrons crossing",
                 color: "text-[#7cc4ff]",
-              },
-              {
-                label: "RESISTANCE",
-                value: `${OHMS} Ω`,
-                hint: "how much the path fights the flow",
-                color: "text-[#ff9a6b]",
               },
             ].map((m) => (
               <div key={m.label} className="rounded-sm border border-line bg-panel/85 px-2.5 py-1.5">
