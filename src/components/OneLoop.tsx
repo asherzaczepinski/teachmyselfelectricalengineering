@@ -289,7 +289,7 @@ function drawScene(
   ctx.textAlign = "right";
   ctx.font = `11px ${MONO}`;
   ctx.fillStyle = C.ink2;
-  ctx.fillText(scene.on ? "switch: closed — click to open" : "switch: open — click to close", SX - 30, SY + 4);
+  ctx.fillText(scene.on ? "click to open" : "click to close", SX - 30, SY + 4);
 
   // electrons repel — the crowd re-spaces itself, so toggling never leaves gaps
   // (paused while the "go!" wave is mid-sweep so the freeze stays visible)
@@ -306,10 +306,9 @@ function drawScene(
   }
 
   // the people: always shaking (electrons jiggle!), each one walking only
-  // once the "go!" wave (which starts at the switch) has reached their spot
+  // once the "go!" wave (from the battery's − out) has reached their spot
   for (let i = 0; i < ppl.length; i++) {
-    const relPos = (ppl[i] - P.tSwitch + P.total) % P.total;
-    const active = relPos <= frontT;
+    const active = ppl[i] % P.total <= frontT;
     if (active) ppl[i] = (ppl[i] + speed * dt) % P.total;
     const t = ppl[i];
     const pt = P.at(t);
@@ -329,9 +328,10 @@ function drawScene(
     );
   }
 
-  // the "go!" shove racing around the loop at (nearly) light speed, from the switch
+  // the "go!" shove racing around the loop at (nearly) light speed,
+  // bursting out of the battery's − end
   if (scene.on && sweep > 0 && sweep < 1) {
-    const pt = P.at(P.tSwitch + sweep * P.total);
+    const pt = P.at(sweep * P.total);
     const g = ctx.createRadialGradient(pt.x, pt.y, 0, pt.x, pt.y, 40);
     g.addColorStop(0, "rgba(150, 226, 255, 0.8)");
     g.addColorStop(1, "rgba(150, 226, 255, 0)");
