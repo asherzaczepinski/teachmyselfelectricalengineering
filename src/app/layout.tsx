@@ -14,9 +14,9 @@ const plexMono = IBM_Plex_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Circuit Lab — teach yourself electricity by building",
+  title: "One Loop — battery, wire, bulb: the whole story of electricity",
   description:
-    "A hands-on course and sandbox with a real circuit solver: light bulbs, blow fuses, wire a piano, and compute 1+1 with magnets.",
+    "One teaching circuit: watch electrons jiggle in copper, see the battery pile up charge, slow time a billion times to watch the push race around the loop, and read the volts, amps, and ohms.",
 };
 
 export default function RootLayout({

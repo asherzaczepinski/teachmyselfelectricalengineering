@@ -1,5 +1,5 @@
-import Playground from "../components/Playground";
+import OneLoop from "../components/OneLoop";
 
 export default function HomePage() {
-  return <Playground />;
+  return <OneLoop />;
 }
